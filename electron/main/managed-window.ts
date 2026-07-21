@@ -9,6 +9,7 @@ export interface ManagedWindowLike {
   show(): void;
   focus(): void;
   loadURL(url: string): Promise<unknown>;
+  close?(): void;
 }
 export function enforceMuted(contents: ManagedWebContents) {
   contents.setAudioMuted(true);
@@ -33,7 +34,14 @@ export async function openOrReuseManaged(
     "did-navigate-in-page",
   ])
     window.webContents.on(event, () => enforceMuted(window.webContents));
-  await window.loadURL(url);
-  enforceMuted(window.webContents);
-  return window;
+  try {
+    await window.loadURL(url);
+    enforceMuted(window.webContents);
+    window.show();
+    window.focus();
+    return window;
+  } catch (error) {
+    window.close?.();
+    throw error;
+  }
 }

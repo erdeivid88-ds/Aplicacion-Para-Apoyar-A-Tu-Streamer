@@ -9,6 +9,7 @@ import type {
   DeviceAuthPublic,
   TwitchAccountType,
 } from "../../src/domain/types";
+import type { LiveResult } from "../../src/domain/monitor";
 
 export const TWITCH_DEVICE_ENDPOINT = "https://id.twitch.tv/oauth2/device";
 export const TWITCH_TOKEN_ENDPOINT = "https://id.twitch.tv/oauth2/token";
@@ -397,6 +398,37 @@ export class TwitchAuth {
     const data = (await response.json()) as { data: { id: string }[] };
     if (!data.data[0]) throw new TwitchApiError(404, "Canal no encontrado.");
     return data.data[0].id;
+  }
+  async checkLive(login: string): Promise<LiveResult> {
+    const token = await this.accessToken();
+    const clientId = this.clientId()?.trim();
+    if (!clientId) throw new TwitchApiError(401, "Falta Client ID.");
+    const response = await fetch(
+      `https://api.twitch.tv/helix/streams?user_login=${encodeURIComponent(login)}`,
+      {
+        headers: {
+          "Client-Id": clientId,
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    if (!response.ok)
+      throw await this.responseError(
+        response,
+        "No se pudo comprobar el directo en Twitch.",
+      );
+    const json = (await response.json()) as {
+      data?: { id: string; title?: string; game_name?: string }[];
+    };
+    const stream = json.data?.[0];
+    return stream
+      ? {
+          live: true,
+          sessionId: String(stream.id),
+          title: stream.title,
+          category: stream.game_name,
+        }
+      : { live: false };
   }
   async send(broadcasterId: string, message: string) {
     const connection = await this.validate();

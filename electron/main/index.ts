@@ -30,6 +30,8 @@ import {
 } from "../../src/domain/channels";
 import { parseImport } from "../../src/domain/import";
 import { ScanLock, transition } from "../../src/domain/monitor";
+import { completedStopState } from "../../src/domain/monitor-control";
+import { streamUrl, validateStreamUrl } from "../../src/domain/stream-url";
 import { migrateConnectionFrom102 } from "../../src/domain/twitch-account";
 import {
   defaultAutomation,
@@ -93,7 +95,7 @@ function migrate() {
     );
   }
 }
-const state = () => store.store;
+const state = () => structuredClone(store.store);
 const emit = () =>
   win && !win.isDestroyed() && win.webContents.send("state:changed", state());
 function log(
@@ -135,14 +137,32 @@ const safeExternal = (value: string) => {
   return shell.openExternal(url.toString());
 };
 async function openStream(s: Streamer) {
-  if (store.get("settings.browserMode") === "managed") {
-    const existing = managed.get(s.id);
+  const browserMode = store.get("settings.browserMode");
+  const existing = managed.get(s.id);
+  const reusable = existing && !existing.isDestroyed() ? existing : undefined;
+  const validation = validateStreamUrl(s.platform, s.url);
+  console.info("[stream-open]", {
+    streamerId: s.id,
+    platform: s.platform,
+    normalizedLogin: s.normalizedName,
+    url: typeof s.url === "string" ? s.url : "(invalid)",
+    browserMode,
+    existingWindow: Boolean(reusable),
+    validated: validation.valid,
+    windowRole: browserMode === "managed" ? "managed-stream" : "external",
+  });
+  if (!validation.valid) {
+    log(`Apertura bloqueada: ${validation.reason}`, "error", s);
+    throw new Error(validation.reason);
+  }
+  if (browserMode === "managed") {
     const result = (await openOrReuseManaged(
-      existing,
+      reusable,
       () =>
         new BrowserWindow({
           width: 1100,
           height: 760,
+          show: false,
           webPreferences: {
             partition: "persist:managed-browser",
             contextIsolation: true,
@@ -150,11 +170,11 @@ async function openStream(s: Streamer) {
             sandbox: true,
           },
         }),
-      s.url,
+      validation.url,
     )) as BrowserWindow;
     managed.set(s.id, result);
-    if (!existing) result.once("closed", () => managed.delete(s.id));
-  } else await safeExternal(s.url);
+    if (!reusable) result.once("closed", () => managed.delete(s.id));
+  } else await safeExternal(validation.url);
   if (store.get("settings.notifications"))
     new Notification({
       title: `${s.displayName} está en directo`,
@@ -243,19 +263,10 @@ async function scan(generation = monitorGeneration) {
       )
         continue;
       try {
-        let accessToken: string | undefined;
-        if (previous.platform === "twitch")
-          accessToken = await auth.accessToken();
-        const provider =
+        const result =
           previous.platform === "twitch"
-            ? new TwitchProvider()
-            : new KickProvider();
-        const result = await provider.check(previous, {
-          clientId: store.get(
-            `settings.platforms.${previous.platform}.clientId`,
-          ),
-          accessToken,
-        });
+            ? await new TwitchProvider(auth).check(previous)
+            : await new KickProvider().check(previous);
         if (!monitorCurrent(generation)) return null;
         const change = transition(previous, result);
         const current = {
@@ -338,7 +349,6 @@ async function stop(manual = true, forced = false) {
   scanController = null;
   if (timer) clearInterval(timer);
   timer = null;
-  store.set("monitor.nextScan", undefined);
   store.set(
     "streamers",
     store
@@ -359,8 +369,7 @@ async function stop(manual = true, forced = false) {
         : "Monitor apagado",
   );
   await Promise.resolve();
-  store.set("monitor.status", "off");
-  store.set("monitor.manuallyStopped", manual);
+  store.set("monitor", completedStopState(store.get("monitor"), manual));
   emit();
   updateTray();
 }
@@ -498,7 +507,7 @@ function register() {
       displayName: input.displayName.trim(),
       normalizedName: normalizeName(input.displayName),
       externalId: input.externalId?.trim() || undefined,
-      url: `https://${input.platform === "twitch" ? "www.twitch.tv" : "kick.com"}/${normalizeName(input.displayName)}`,
+      url: streamUrl(input.platform, normalizeName(input.displayName)),
       enabled: input.enabled ?? true,
       live: old?.live ?? false,
       automation,

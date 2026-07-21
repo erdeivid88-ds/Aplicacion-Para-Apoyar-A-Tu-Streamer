@@ -67,8 +67,14 @@ function Home({ state }: { state: AppState }) {
             Encender monitor
           </button>
         ) : (
-          <button className="danger" onClick={() => void window.api.stop()}>
-            Apagar monitor
+          <button
+            className="danger"
+            disabled={state.monitor.status === "stopping"}
+            onClick={() => void window.api.stop()}
+          >
+            {state.monitor.status === "stopping"
+              ? "Deteniendo monitor…"
+              : "Apagar monitor"}
           </button>
         )}
         <button onClick={() => void window.api.scan()}>Comprobar ahora</button>
@@ -752,7 +758,7 @@ function Settings({ state }: { state: AppState }) {
             <pre>
               {JSON.stringify(
                 {
-                  version: "1.0.5",
+                  version: "1.0.6",
                   platform: navigator.platform,
                   monitor: MONITOR_LABELS[state.monitor.status],
                   platforms: draft.platforms,
@@ -774,7 +780,7 @@ function Settings({ state }: { state: AppState }) {
                 void window.api.copy(
                   JSON.stringify(
                     {
-                      version: "1.0.5",
+                      version: "1.0.6",
                       monitor: state.monitor.status,
                       oauth: state.bot.status,
                       scopes: state.bot.scopes ?? [],

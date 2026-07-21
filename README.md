@@ -1,5 +1,7 @@
 # Apoya a tu Streamer
 
+Versión actual: **1.0.6**.
+
 Aplicación Electron para Windows 10/11 x64 que monitoriza canales de Twitch y Kick, abre directos y permite mensajes funcionales mediante una cuenta bot claramente identificada. La mensajería está desactivada por defecto y solo funciona en canales cuya autorización se haya confirmado.
 
 No simula actividad humana, envía spam, automatiza el DOM, manipula cookies ni evade moderación, antifraude o límites.
@@ -23,6 +25,8 @@ No existe fallback por Playwright, DOM, scraping, pulsaciones ni cookies.
 ## Navegador gestionado y seguridad
 
 El navegador gestionado reutiliza una única ventana por canal y aplica silencio antes de cargar y después de cargas, navegaciones y recargas. La aplicación solo cierra ventanas creadas por ella. Se mantienen `contextIsolation: true`, `nodeIntegration: false`, sandbox, CSP estricta, IPC validado, entradas sanitizadas y límites de longitud.
+
+Antes de abrir un directo, la aplicación valida el destino en un único punto. Solo admite una URL HTTPS de canal con un único segmento en `twitch.tv`/`www.twitch.tv` o `kick.com`/`www.kick.com`; bloquea destinos locales, OAuth, archivos y rutas internas de la aplicación.
 
 ## Desarrollo
 

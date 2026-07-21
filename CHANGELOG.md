@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.6
+
+- Completa el apagado del monitor eliminando `nextScan` sin escribir valores `undefined` en electron-store.
+- Consulta el estado en directo de Twitch exclusivamente mediante la sesión cifrada de `TwitchAuth`.
+- Valida estrictamente cada URL de stream antes de crear una ventana y oculta la ventana gestionada hasta completar la carga.
+
 ## 1.0.5 (Device Flow y monitor)
 
 - Sustituye por completo callback/PKCE por Device Code Flow para cliente público sin secretos.

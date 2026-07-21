@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MonitorControl } from "./monitor-control";
+import { completedStopState, MonitorControl } from "./monitor-control";
 describe("apagado robusto del monitor", () => {
   it("apaga desde activo", () => {
     const m = new MonitorControl();
@@ -54,5 +54,17 @@ describe("apagado robusto del monitor", () => {
     const m = new MonitorControl();
     m.start();
     expect(m.stop(true)).toBe(true);
+  });
+  it("crea el estado final persistible sin nextScan", () => {
+    const final = completedStopState(
+      {
+        status: "stopping",
+        nextScan: "2026-07-22T10:00:00.000Z",
+        errors: [],
+      },
+      true,
+    );
+    expect(final).toEqual({ status: "off", errors: [], manuallyStopped: true });
+    expect("nextScan" in final).toBe(false);
   });
 });

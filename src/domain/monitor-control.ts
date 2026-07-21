@@ -36,3 +36,12 @@ export class MonitorControl {
     return this.status === "off" && (!this.manuallyStopped || allowAfterManual);
   }
 }
+
+export function completedStopState<T extends { nextScan?: string }>(
+  monitor: T,
+  manuallyStopped: boolean,
+) {
+  const result = { ...monitor, status: "off" as const, manuallyStopped };
+  Reflect.deleteProperty(result, "nextScan");
+  return result;
+}
