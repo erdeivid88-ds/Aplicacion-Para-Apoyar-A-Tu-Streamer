@@ -1,1 +1,72 @@
-{"name":"apoya-a-tu-streamer","version":"1.0.0","description":"Monitor y lanzador legítimo de directos de Twitch y Kick","main":"dist-electron/main/index.js","author":"Vortex Studio","license":"MIT","type":"module","scripts":{"dev":"vite","build:electron":"esbuild electron/main/index.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main/index.js && esbuild electron/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload/index.js","build":"npm run typecheck && vite build && npm run build:electron && electron-builder --dir","build:win":"npm run typecheck && vite build && npm run build:electron && electron-builder --win nsis portable","lint":"eslint .","typecheck":"tsc --noEmit","test":"vitest run","format":"prettier --write ."},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest","electron-store":"^10.0.0","zod":"^3.24.0"},"devDependencies":{"@types/node":"latest","@types/react":"latest","@types/react-dom":"latest","electron":"latest","electron-builder":"latest","esbuild":"latest","eslint":"latest","@eslint/js":"latest","typescript-eslint":"latest","eslint-plugin-react-hooks":"latest","eslint-plugin-react-refresh":"latest","prettier":"latest","typescript":"latest","vitest":"latest"},"build":{"appId":"es.vortexstudio.apoyaatustreamer","productName":"Apoya a tu Streamer","asar":true,"directories":{"output":"release"},"files":["dist/**/*","dist-electron/**/*","package.json"],"win":{"target":["nsis","portable"],"artifactName":"${productName}-${version}-${arch}.${ext}"},"nsis":{"oneClick":false,"allowToChangeInstallationDirectory":true,"createDesktopShortcut":true,"createStartMenuShortcut":true}}}
+{
+  "name": "apoya-a-tu-streamer",
+  "version": "1.0.1",
+  "description": "Monitor y lanzador legítimo de directos de Twitch y Kick",
+  "main": "dist-electron/main/index.js",
+  "author": "Vortex Studio",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:electron": "esbuild electron/main/index.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main/index.js && esbuild electron/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload/index.js",
+    "build": "npm run typecheck && vite build && npm run build:electron && electron-builder --dir --publish never",
+    "build:win": "npm run typecheck && vite build && npm run build:electron && electron-builder --win nsis portable --publish never",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "electron-store": "^10.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "esbuild": "latest",
+    "eslint": "latest",
+    "@eslint/js": "latest",
+    "typescript-eslint": "latest",
+    "eslint-plugin-react-hooks": "latest",
+    "eslint-plugin-react-refresh": "latest",
+    "prettier": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  },
+  "build": {
+    "appId": "es.vortexstudio.apoyaatustreamer",
+    "productName": "Apoya a tu Streamer",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "artifactName": "Apoya-a-tu-Streamer-Setup-${version}-${arch}.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "Apoya-a-tu-Streamer-Portable-${version}-${arch}.${ext}"
+    }
+  }
+}
