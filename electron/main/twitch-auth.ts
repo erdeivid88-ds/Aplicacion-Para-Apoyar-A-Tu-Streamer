@@ -147,9 +147,12 @@ export class TwitchAuth {
       await shell.openExternal(
         buildAuthorizeUrl(clientId, accountType, state, challenge).toString(),
       );
+      console.info("[twitch-oauth] navegador abierto", {
+        redirectUri: TWITCH_REDIRECT_URI,
+      });
       code = await callback.waitForCode;
     } finally {
-      await callback.close();
+      await callback.close("finalización del flujo");
     }
     const response = await fetch("https://id.twitch.tv/oauth2/token", {
       method: "POST",

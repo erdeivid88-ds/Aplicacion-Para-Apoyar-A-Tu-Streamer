@@ -5,68 +5,111 @@ import {
   oauthHtml,
   parseOAuthCallback,
   startOAuthCallback,
+  TWITCH_OAUTH_LISTEN_HOST,
 } from "./oauth-callback";
 import {
-  TWITCH_OAUTH_HOST,
   TWITCH_OAUTH_PORT,
   TWITCH_REDIRECT_URI,
 } from "../../src/domain/twitch-oauth";
 
 const logger = { info: vi.fn(), error: vi.fn() };
-const active: { close: () => Promise<void> }[] = [];
+const active: { close: (reason?: string) => Promise<void> }[] = [];
 afterEach(async () => {
-  while (active.length) await active.pop()!.close();
+  while (active.length) await active.pop()!.close("fin de prueba");
   vi.clearAllMocks();
 });
+async function start(state = "state", timeout = 2_000) {
+  const callback = await startOAuthCallback(state, timeout, logger);
+  active.push(callback);
+  return callback;
+}
+async function finish(
+  callback: Awaited<ReturnType<typeof start>>,
+  host = "localhost",
+  state = "state",
+) {
+  const response = await fetch(
+    `http://${host.includes(":") ? `[${host}]` : host}:3000/oauth/twitch?code=test-code&state=${state}`,
+  );
+  expect(response.status).toBe(200);
+  await expect(callback.waitForCode).resolves.toBe("test-code");
+}
 
-describe.sequential("callback OAuth fijo", () => {
-  it("usa la redirect URI fija exacta", () =>
+describe.sequential("callback OAuth dual-stack", () => {
+  it("mantiene la redirect URI exacta con localhost", () =>
     expect(TWITCH_REDIRECT_URI).toBe("http://localhost:3000/oauth/twitch"));
-  it("procesa correctamente code y devuelve HTML claro", async () => {
-    const callback = await startOAuthCallback("state-ok", 1_000, logger);
-    active.push(callback);
+  it("es accesible por IPv4", async () => {
+    const callback = await start();
+    await finish(callback, "127.0.0.1");
+  });
+  it("es accesible por IPv6 cuando está disponible", async () => {
+    const callback = await start();
+    await finish(callback, "::1");
+  });
+  it("procesa un callback válido y cierra después del éxito", async () => {
+    const callback = await start();
+    await finish(callback);
+    expect(callback.server.listening).toBe(false);
+  });
+  it("una visita sin parámetros responde 400 y mantiene abierto el flujo", async () => {
+    const callback = await start();
+    const response = await fetch(TWITCH_REDIRECT_URI);
+    expect(response.status).toBe(400);
+    expect(callback.server.listening).toBe(true);
+    await finish(callback);
+  });
+  it("favicon responde 404 y mantiene abierto el flujo", async () => {
+    const callback = await start();
+    const response = await fetch("http://localhost:3000/favicon.ico");
+    expect(response.status).toBe(404);
+    expect(callback.server.listening).toBe(true);
+    await finish(callback);
+  });
+  it("una ruta desconocida responde 404 y mantiene abierto el flujo", async () => {
+    const callback = await start();
+    const response = await fetch("http://localhost:3000/desconocida");
+    expect(response.status).toBe(404);
+    expect(callback.server.listening).toBe(true);
+    await finish(callback);
+  });
+  it("state inválido responde 400 sin cerrar y después acepta uno válido", async () => {
+    const callback = await start("expected");
     const response = await fetch(
-      `${TWITCH_REDIRECT_URI}?code=secret-code&state=state-ok`,
+      `${TWITCH_REDIRECT_URI}?code=hidden&state=wrong`,
     );
-    expect(await callback.waitForCode).toBe("secret-code");
-    expect(await response.text()).toContain(
-      "Cuenta de Twitch conectada correctamente. Ya puedes cerrar esta ventana.",
-    );
+    expect(response.status).toBe(400);
+    expect(callback.server.listening).toBe(true);
+    await finish(callback, "localhost", "expected");
   });
-  it("rechaza un state incorrecto", async () => {
-    const callback = await startOAuthCallback("expected", 1_000, logger);
-    active.push(callback);
-    const rejection = expect(callback.waitForCode).rejects.toThrow(
-      /Estado OAuth no válido/,
-    );
-    await fetch(`${TWITCH_REDIRECT_URI}?code=hidden&state=wrong`);
-    await rejection;
-  });
-  it("procesa el error OAuth devuelto por Twitch sin credenciales", async () => {
-    const callback = await startOAuthCallback("state", 1_000, logger);
-    active.push(callback);
+  it("un error OAuth de Twitch es definitivo y cierra el servidor", async () => {
+    const callback = await start();
     const rejection = expect(callback.waitForCode).rejects.toThrow(
       "El usuario canceló",
     );
     const response = await fetch(
       `${TWITCH_REDIRECT_URI}?error=access_denied&error_description=El+usuario+canceló&state=state`,
     );
+    expect(response.status).toBe(400);
     await rejection;
-    expect(await response.text()).not.toContain("secret-code");
+    expect(callback.server.listening).toBe(false);
   });
-  it("cierra el servidor tras timeout", async () => {
-    const callback = await startOAuthCallback("state", 10, logger);
-    active.push(callback);
+  it("timeout cierra el servidor", async () => {
+    const callback = await start("state", 15);
     await expect(callback.waitForCode).rejects.toThrow(/agotó el tiempo/);
-    const next = await startOAuthCallback("next", 1_000, logger);
-    active.push(next);
-    await next.close();
+    expect(callback.server.listening).toBe(false);
   });
-  it("informa cuando el puerto 3000 está ocupado", async () => {
+  it("puerto ocupado devuelve el mensaje esperado", async () => {
     const holder = createServer();
     await new Promise<void>((resolve, reject) => {
       holder.once("error", reject);
-      holder.listen(TWITCH_OAUTH_PORT, TWITCH_OAUTH_HOST, resolve);
+      holder.listen(
+        {
+          port: TWITCH_OAUTH_PORT,
+          host: TWITCH_OAUTH_LISTEN_HOST,
+          ipv6Only: false,
+        },
+        resolve,
+      );
     });
     try {
       await expect(startOAuthCallback("state", 1_000, logger)).rejects.toThrow(
@@ -76,20 +119,12 @@ describe.sequential("callback OAuth fijo", () => {
       await new Promise<void>((resolve) => holder.close(() => resolve()));
     }
   });
-  it("cierra correctamente cuando se solicita", async () => {
-    const callback = await startOAuthCallback("state", 1_000, logger);
-    active.push(callback);
-    await callback.close();
-    const replacement = await startOAuthCallback("replacement", 1_000, logger);
-    active.push(replacement);
-    await replacement.close();
-  });
   it("escapa el motivo mostrado en HTML", () =>
     expect(oauthHtml(false, "<script>bad()</script>")).not.toContain(
       "<script>",
     ));
-  it("distingue rutas incorrectas", () =>
-    expect(parseOAuthCallback("/wrong?state=x", "x").kind).toBe(
-      "invalid-path",
+  it("clasifica una visita sin parámetros como no definitiva", () =>
+    expect(parseOAuthCallback("/oauth/twitch", "state").kind).toBe(
+      "missing-parameters",
     ));
 });

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.5
+
+- Hace el callback OAuth accesible por `localhost` mediante IPv4 e IPv6.
+- Verifica las direcciones locales antes de abrir Twitch y mantiene vivo el flujo ante favicon, rutas desconocidas, visitas incompletas y `state` inválido.
+- Añade diagnóstico seguro del listener y motivos de cierre.
+
 ## 1.0.4
 
 - Fija el callback OAuth de Twitch en `http://localhost:3000/oauth/twitch`.

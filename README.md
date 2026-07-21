@@ -18,7 +18,7 @@ http://localhost:3000/oauth/twitch
 
 Después pulsa `Add` y guarda los cambios. `http://localhost:3000` sin `/oauth/twitch` no sirve. Tampoco debe añadirse una barra final: la URL registrada debe coincidir exactamente con `http://localhost:3000/oauth/twitch`.
 
-Durante el inicio de sesión la aplicación escucha únicamente en `127.0.0.1`, puerto `3000`, y usa la URL anterior como `redirect_uri` tanto al autorizar como al intercambiar el código. Si el puerto está ocupado, cierra la aplicación que lo esté utilizando y vuelve a intentarlo.
+Durante el inicio de sesión la aplicación abre un listener dual-stack en el puerto `3000`, accesible por `localhost` tanto mediante IPv4 (`127.0.0.1`) como IPv6 (`::1`). La `redirect_uri` enviada a Twitch sigue siendo exactamente la URL anterior con `localhost`, tanto al autorizar como al intercambiar el código. Antes de abrir el navegador se resuelve y verifica localmente `localhost`. Si el puerto está ocupado, cierra la aplicación que lo esté utilizando y vuelve a intentarlo.
 
 Los tokens se cifran con `safeStorage` en el proceso principal. Nunca llegan al renderer, registros ni exportaciones. Cada canal configura mensaje, envío inicial, repetición, intervalo (mínimo 15 minutos) y máximo por directo (hasta 5). El estado del directo y los envíos se persisten para evitar duplicados después de reiniciar. La automatización se detiene al terminar el directo y se pausa tras tres fallos consecutivos.
 
