@@ -1,0 +1,19 @@
+name: Release Windows
+on:
+  push:
+    tags: ['v*']
+permissions: {contents: write}
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:win
+      - shell: pwsh
+        run: Get-ChildItem release -File | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $($_.Path | Split-Path -Leaf)" } | Set-Content release/SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with: {files: "release/*"}

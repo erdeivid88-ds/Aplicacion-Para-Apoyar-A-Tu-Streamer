@@ -1,0 +1,13 @@
+name: Error
+description: Comunica un problema reproducible
+body:
+  - type: textarea
+    id: description
+    attributes: {label: Descripción}
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes: {label: Versión}
+  - type: textarea
+    id: steps
+    attributes: {label: Pasos para reproducir}
