@@ -1,73 +1,33 @@
 # Apoya a tu Streamer
 
-Aplicación de escritorio libre para Windows 10/11 x64 que vigila una lista personal de canales de Twitch y Kick y abre un directo nuevo en el navegador. Es un monitor y lanzador legítimo: no escribe en chats, no simula actividad, no manipula cookies y no genera audiencia artificial.
+Aplicación Electron para Windows 10/11 x64 que monitoriza canales de Twitch y Kick, abre directos y permite mensajes funcionales mediante una cuenta bot claramente identificada. La mensajería está desactivada por defecto y solo funciona en canales cuya autorización se haya confirmado.
 
-## Funciones
+No simula actividad humana, envía spam, automatiza el DOM, manipula cookies ni evade moderación, antifraude o límites.
 
-- Twitch y Kick pueden configurarse juntas o de forma independiente.
-- Barridos periódicos con aislamiento de fallos, bloqueo de concurrencia y prevención persistente de aperturas duplicadas.
-- Inicio/apagado manual, estado, próxima comprobación, errores e historial local.
-- Navegador predeterminado o ventana gestionada aislada, silenciada y cerrable por la aplicación.
-- Alta, edición, activación, búsqueda, eliminación e importación/exportación JSON de canales.
-- Mensaje de apoyo copiado al portapapeles; el usuario realiza cualquier envío.
-- Bandeja de Windows, notificaciones, inicio con Windows, tema y ajustes de inactividad.
-- IPC mínimo, `contextIsolation`, renderer sin Node, CSP y enlaces externos validados.
+## Mensajería Twitch
 
-> Pendiente de capturas: añade imágenes verificadas de Inicio, Streamers y Ajustes en `docs/screenshots/`.
+La integración usa exclusivamente OAuth oficial (Authorization Code con PKCE), validación y renovación automática, resolución de `broadcaster_id`/`sender_id` y el endpoint Helix de chat. Los scopes mínimos solicitados a la cuenta bot son `user:write:chat` y `user:bot`. El propietario del canal debe confirmar la autorización en la aplicación y dar al bot la capacidad oficial de escribir en su canal según los requisitos de Twitch.
 
-## Navegadores
+Los tokens se cifran con `safeStorage` en el proceso principal. Nunca llegan al renderer, registros ni exportaciones. Cada canal configura mensaje, envío inicial, repetición, intervalo (mínimo 15 minutos) y máximo por directo (hasta 5). El estado del directo y los envíos se persisten para evitar duplicados después de reiniciar. La automatización se detiene al terminar el directo y se pausa tras tres fallos consecutivos.
 
-El modo **predeterminado** abre la URL con Windows. La aplicación no puede silenciar ni cerrar esa pestaña; cuando finaliza, solo informa. El modo **gestionado** usa una ventana Chromium de Electron y un perfil local separado (`persist:managed-browser`): debes iniciar sesión también allí. Solo controla ventanas que ella misma crea. Está desactivado de forma predeterminada.
+## Kick
 
-## APIs y credenciales
+`Mensajería automática no disponible para Kick mediante la API oficial actual.`
 
-Twitch requiere una aplicación registrada en [Twitch Developers](https://dev.twitch.tv/console), un Client ID y un token OAuth con acceso de lectura. Kick usa su [API pública](https://docs.kick.com/) y actualmente requiere token OAuth; para consultar por API se recomienda guardar también la ID externa del canal. Introduce estos datos en **Plataformas**. Permanecen en el archivo local de Electron y nunca deben compartirse ni incorporarse a Git. Esta primera versión no promete almacenamiento cifrado: usa tokens de alcance mínimo y revócalos si el equipo se comparte.
+No existe fallback por Playwright, DOM, scraping, pulsaciones ni cookies.
 
-Sin credenciales la aplicación conserva toda la gestión y apertura manual, pero no puede confirmar el estado en directo mediante la API oficial. No se usa scraping de respaldo. Algunas capacidades dependen de la disponibilidad y condiciones vigentes de las APIs.
+## Navegador gestionado y seguridad
 
-Puedes obtener IDs mediante [ids.vortexstudio.es](https://ids.vortexstudio.es). Al añadir un canal, elige plataforma, escribe su nombre exacto y, para Kick, la ID externa.
+El navegador gestionado reutiliza una única ventana por canal y aplica silencio antes de cargar y después de cargas, navegaciones y recargas. La aplicación solo cierra ventanas creadas por ella. Se mantienen `contextIsolation: true`, `nodeIntegration: false`, sandbox, CSP estricta, IPC validado, entradas sanitizadas y límites de longitud.
 
 ## Desarrollo
 
-Requisitos: Node.js 22 LTS, npm y Git.
-
 ```bash
-git clone git@github.com:erdeivid88-ds/Aplicacion-Para-Apoyar-A-Tu-Streamer.git
-cd Aplicacion-Para-Apoyar-A-Tu-Streamer
 npm ci
-npm run dev
-```
-
-Validación completa:
-
-```bash
 npm run lint
 npm run typecheck
 npm test
-npm run build
+npm run build:win
 ```
 
-Genera NSIS y portable para Windows desde Windows con `npm run build:win`. Los artefactos aparecen en `release/`. También puedes crear y subir un tag `v1.0.0`; GitHub Actions compila ambos `.exe`, calcula SHA-256 y publica la release. Al no estar firmado, SmartScreen puede advertir al usuario.
-
-## Estructura
-
-- `electron/main`: ventana, bandeja, persistencia, monitor, APIs y navegador gestionado.
-- `electron/preload`: puente IPC permitido.
-- `src/domain`: modelos y lógica comprobable sin Electron.
-- `src/ui`: React y estilos adaptables.
-- `.github/workflows`: validación y releases Windows.
-
-Los datos viven en la ruta `userData` propia de Electron y sobreviven a las actualizaciones. El esquema incluye una versión para migraciones futuras. Exporta una copia desde Ajustes antes de cambios importantes.
-
-## Solución de problemas
-
-- **No se pudo comprobar Twitch/Kick:** revisa que la plataforma esté habilitada y el token sea vigente.
-- **No abre el canal:** comprueba el navegador predeterminado y la URL guardada.
-- **El modo gestionado pide sesión:** su perfil es deliberadamente independiente; inicia sesión en esa ventana.
-- **Canal duplicado:** se compara plataforma + ID externa y plataforma + nombre normalizado.
-
-## Privacidad, uso y licencia
-
-No existe servidor propio ni telemetría. La aplicación no está afiliada oficialmente con Twitch ni Kick. El usuario debe cumplir sus condiciones; no se garantiza que una reproducción sea contabilizada y está prohibido usar el proyecto para audiencia artificial. Las credenciales permanecen localmente.
-
-Consulta [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) y la licencia [MIT](LICENSE). Contacto: [contacto@vortexstudio.es](mailto:contacto@vortexstudio.es).
+Los instaladores se generan en `release/`. Las credenciales no deben incorporarse nunca a Git.

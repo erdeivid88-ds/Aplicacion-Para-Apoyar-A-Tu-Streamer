@@ -1,9 +1,484 @@
-import{useEffect,useState}from'react';import type{AppState,Platform,Streamer}from'../domain/types';
-const pages=['Inicio','Plataformas','Streamers','Ajustes','Actividad','Contacto']as const;type Page=typeof pages[number];
-export default function App(){const[s,setS]=useState<AppState>();const[p,setP]=useState<Page>('Inicio');const[notice,setNotice]=useState(false);useEffect(()=>{void window.api.state().then(setS);return window.api.onState(setS)},[]);if(!s)return <main>Cargando…</main>;return <div className="shell"><aside><h1>Apoya a tu Streamer</h1>{pages.map(x=><button className={p===x?'active':''} onClick={()=>setP(x)} key={x}>{x}</button>)}</aside><main><header>Monitor: <b>{s.monitor.status}</b></header>{p==='Inicio'&&<Home s={s} start={()=>s.settings.showStartNotice?setNotice(true):void window.api.start()}/>} {p==='Plataformas'&&<Platforms s={s}/>} {p==='Streamers'&&<Streamers s={s}/>} {p==='Ajustes'&&<Settings s={s}/>} {p==='Actividad'&&<Activity s={s}/>} {p==='Contacto'&&<Contact/>}</main>{notice&&<div className="backdrop"><div className="modal" role="dialog"><h2>Antes de encender</h2><p>Para abrir y utilizar correctamente los directos, debes tener iniciada sesión en el navegador predeterminado de Windows en las plataformas que hayas configurado. No es necesario utilizar Twitch y Kick a la vez; puedes usar solamente una de las dos.</p><label><input type="checkbox" onChange={e=>void window.api.saveSettings({showStartNotice:!e.target.checked})}/> No volver a mostrar este aviso</label><div className="actions"><button onClick={()=>setNotice(false)}>Cancelar</button><button className="primary" onClick={()=>{setNotice(false);void window.api.start()}}>Entendido, encender monitor</button></div></div></div>}</div>}
-function Home({s,start}:{s:AppState;start:()=>void}){return <section><h2>Inicio</h2><div className="hero"><p>Monitor legítimo de tus canales favoritos.</p>{s.monitor.status==='off'?<button className="power" onClick={start}>Encender monitor</button>:<button className="danger" onClick={()=>void window.api.stop()}>Apagar monitor</button>}<button onClick={()=>void window.api.scan()}>Comprobar ahora</button></div><div className="grid"><Card n={s.streamers.length} t="Canales configurados"/><Card n={s.streamers.filter(x=>x.live).length} t="En directo"/><Card n={s.monitor.lastScan?new Date(s.monitor.lastScan).toLocaleString():'—'} t="Último barrido"/><Card n={s.monitor.nextScan?new Date(s.monitor.nextScan).toLocaleString():'—'} t="Próximo barrido"/></div>{s.monitor.errors.map(x=><p className="warning" key={x}>{x}</p>)}</section>}function Card({n,t}:{n:string|number;t:string}){return <article><b>{n}</b><span>{t}</span></article>}
-function Platforms({s}:{s:AppState}){return <section><h2>Plataformas</h2><p>No es obligatorio configurar ambas. La sesión se mantiene en el navegador y nunca guardamos contraseñas ni cookies.</p><div className="grid">{(['twitch','kick']as Platform[]).map(p=>{const x=s.settings.platforms[p];return <article key={p}><h3>{p.toUpperCase()}</h3><p>{x.enabled?'Habilitada':'Pendiente de configuración'}</p><label>Client ID<input value={x.clientId??''} onChange={e=>void window.api.saveSettings({platforms:{[p]:{...x,clientId:e.target.value}}})}/></label><label>Token OAuth local<input type="password" value={x.accessToken??''} onChange={e=>void window.api.saveSettings({platforms:{[p]:{...x,accessToken:e.target.value}}})}/></label><div className="actions"><button onClick={()=>void window.api.open(p==='twitch'?'https://www.twitch.tv':'https://kick.com')}>Abrir {p}</button><button className="primary" onClick={()=>void window.api.saveSettings({platforms:{[p]:{...x,enabled:!x.enabled}}})}>{x.enabled?'Deshabilitar':'Habilitar'}</button></div></article>})}</div></section>}
-function Streamers({s}:{s:AppState}){const[f,setF]=useState<Partial<Streamer>>({platform:'twitch',enabled:true});const[q,setQ]=useState('');async function save(){try{await window.api.saveStreamer(f);setF({platform:'twitch',enabled:true})}catch(e){alert(e instanceof Error?e.message:String(e))}}return <section><h2>Streamers</h2><div className="actions"><input placeholder="Buscar…" value={q} onChange={e=>setQ(e.target.value)}/><button onClick={()=>void window.api.importData()}>Importar JSON</button><button onClick={()=>void window.api.exportData()}>Exportar JSON</button></div><article><h3>{f.id?'Editar':'Añadir'} streamer</h3><div className="form"><label>Plataforma<select value={f.platform} onChange={e=>setF({...f,platform:e.target.value as Platform})}><option value="twitch">Twitch</option><option value="kick">Kick</option></select></label><label>Nombre exacto<input value={f.displayName??''} onChange={e=>setF({...f,displayName:e.target.value})}/></label><label>ID externa<input value={f.externalId??''} onChange={e=>setF({...f,externalId:e.target.value})}/><small>¿No conoces la ID del streamer? Puedes conseguirla en <a onClick={()=>void window.api.open('https://ids.vortexstudio.es')}>https://ids.vortexstudio.es</a></small></label><button className="primary" onClick={()=>void save()}>Guardar</button></div></article><div className="list">{s.streamers.filter(x=>x.displayName.toLowerCase().includes(q.toLowerCase())).map(x=><article key={x.id}><div><b>{x.displayName}</b><span>{x.platform} · {x.live?'En directo':'Desconectado'} · {x.enabled?'Activo':'Desactivado'}</span>{x.lastError&&<small className="error">{x.lastError}</small>}</div><div className="actions"><button onClick={()=>setF(x)}>Editar</button><button onClick={()=>void window.api.saveStreamer({...x,enabled:!x.enabled})}>{x.enabled?'Desactivar':'Activar'}</button><button className="danger" onClick={()=>confirm(`¿Eliminar ${x.displayName}?`)&&void window.api.deleteStreamer(x.id)}>Eliminar</button></div></article>)}</div></section>}
-function Settings({s}:{s:AppState}){const x=s.settings,save=(v:any)=>void window.api.saveSettings(v);const support=Array(x.supportCount).fill(x.supportText).join(' ');return <section><h2>Ajustes</h2><div className="form settings"><label>Intervalo (mín. 5 minutos)<input type="number" min="5" value={x.scanMinutes} onChange={e=>save({scanMinutes:Math.max(5,+e.target.value)})}/></label><label>Inactividad (minutos)<input type="number" min="1" value={x.idleMinutes} onChange={e=>save({idleMinutes:+e.target.value})}/></label><label>Cuenta atrás (segundos)<input type="number" min="5" value={x.countdownSeconds} onChange={e=>save({countdownSeconds:+e.target.value})}/></label><label>Navegador<select value={x.browserMode} onChange={e=>save({browserMode:e.target.value})}><option value="default">Predeterminado</option><option value="managed">Gestionado (silenciado)</option></select></label>{[['autoStart','Encendido automático'],['startup','Abrir al iniciar Windows'],['startMinimized','Iniciar minimizada'],['minimizeToTray','Minimizar a bandeja'],['notifications','Notificaciones'],['closeManagedTabs','Cerrar pestañas gestionadas']].map(([k,l])=><label className="check" key={k}><input type="checkbox" checked={(x as any)[k]} onChange={e=>save({[k]:e.target.checked})}/>{l}</label>)}<label>Mensaje de apoyo<input value={x.supportText} onChange={e=>save({supportText:e.target.value})}/></label><label>Cantidad<input type="number" min="1" max="20" value={x.supportCount} onChange={e=>save({supportCount:+e.target.value})}/></label></div><article><b>Vista previa</b><p>{support}</p><button onClick={()=>void window.api.copy(support)}>Copiar mensaje de apoyo</button><small> Nunca se envía automáticamente.</small></article></section>}
-function Activity({s}:{s:AppState}){return <section><h2>Actividad</h2><div className="actions"><button onClick={()=>void window.api.copy(s.activity.map(x=>`${x.at} ${x.level} ${x.description}`).join('\n'))}>Copiar registros</button><button className="danger" onClick={()=>confirm('¿Limpiar el historial?')&&void window.api.clearActivity()}>Limpiar</button></div><div className="list">{s.activity.map(x=><article key={x.id}><time>{new Date(x.at).toLocaleString()}</time><b>{x.level}</b><span>{x.platform} {x.channel}</span><p>{x.description}</p></article>)}</div></section>}
-function Contact(){return <section><h2>¿Te Gusta? ¿Quieres Algo Parecido?</h2><article><p>¿Necesitas una aplicación, bot, página web o integración personalizada? Contacta con Vortex Studio.</p><a onClick={()=>void window.api.open('mailto:contacto@vortexstudio.es')}>contacto@vortexstudio.es</a><p><button onClick={()=>void window.api.copy('contacto@vortexstudio.es')}>Copiar correo</button></p></article></section>}
+import { useEffect, useState } from "react";
+import {
+  defaultAutomation,
+  type AppState,
+  type Platform,
+  type Streamer,
+} from "../domain/types";
+const pages = [
+  "Inicio",
+  "Plataformas",
+  "Streamers",
+  "Ajustes",
+  "Actividad",
+  "Contacto",
+] as const;
+type Page = (typeof pages)[number];
+export default function App() {
+  const [state, setState] = useState<AppState>();
+  const [page, setPage] = useState<Page>("Inicio");
+  useEffect(() => {
+    void window.api.state().then(setState);
+    return window.api.onState(setState);
+  }, []);
+  if (!state) return <main>Cargando…</main>;
+  return (
+    <div className="shell">
+      <aside>
+        <h1>Apoya a tu Streamer</h1>
+        {pages.map((item) => (
+          <button
+            className={page === item ? "active" : ""}
+            onClick={() => setPage(item)}
+            key={item}
+          >
+            {item}
+          </button>
+        ))}
+      </aside>
+      <main>
+        <header>
+          Monitor: <b>{state.monitor.status}</b>
+        </header>
+        {page === "Inicio" && <Home state={state} />}{" "}
+        {page === "Plataformas" && <Platforms state={state} />}{" "}
+        {page === "Streamers" && <Streamers state={state} />}{" "}
+        {page === "Ajustes" && <Settings state={state} />}{" "}
+        {page === "Actividad" && <Activity state={state} />}{" "}
+        {page === "Contacto" && <Contact />}
+      </main>
+    </div>
+  );
+}
+function Home({ state }: { state: AppState }) {
+  return (
+    <section>
+      <h2>Inicio</h2>
+      <div className="hero">
+        <p>Monitor legítimo con mensajería funcional autorizada.</p>
+        {state.monitor.status === "off" ? (
+          <button className="power" onClick={() => void window.api.start()}>
+            Encender monitor
+          </button>
+        ) : (
+          <button className="danger" onClick={() => void window.api.stop()}>
+            Apagar monitor
+          </button>
+        )}
+        <button onClick={() => void window.api.scan()}>Comprobar ahora</button>
+      </div>
+      <div className="grid">
+        <Card value={state.streamers.length} label="Canales" />
+        <Card
+          value={state.streamers.filter((x) => x.live).length}
+          label="En directo"
+        />
+        <Card
+          value={state.streamers.filter((x) => x.automation.enabled).length}
+          label="Automatizaciones"
+        />
+        <Card
+          value={
+            state.monitor.lastScan
+              ? new Date(state.monitor.lastScan).toLocaleString()
+              : "—"
+          }
+          label="Último barrido"
+        />
+      </div>
+    </section>
+  );
+}
+function Card({ value, label }: { value: string | number; label: string }) {
+  return (
+    <article>
+      <b>{value}</b>
+      <span>{label}</span>
+    </article>
+  );
+}
+function Platforms({ state }: { state: AppState }) {
+  const twitch = state.settings.platforms.twitch;
+  return (
+    <section>
+      <h2>Plataformas</h2>
+      <div className="grid">
+        <article>
+          <h3>Twitch — cuenta bot</h3>
+          <p>
+            Estado: <b>{state.bot.status}</b>
+            {state.bot.displayName && ` · ${state.bot.displayName}`}
+          </p>
+          {state.bot.detail && (
+            <small className="error">{state.bot.detail}</small>
+          )}
+          <label>
+            Client ID público
+            <input
+              value={twitch.clientId ?? ""}
+              maxLength={80}
+              onChange={(event) =>
+                void window.api.saveSettings({
+                  platforms: {
+                    ...state.settings.platforms,
+                    twitch: { ...twitch, clientId: event.target.value },
+                  },
+                })
+              }
+            />
+          </label>
+          <p>
+            <small>
+              OAuth oficial con PKCE y scopes <code>user:write:chat</code> y{" "}
+              <code>user:bot</code>.
+            </small>
+          </p>
+          <div className="actions">
+            <button
+              className="primary"
+              onClick={() => void window.api.connectBot()}
+            >
+              Conectar cuenta bot
+            </button>
+            <button onClick={() => void window.api.disconnectBot()}>
+              Desconectar
+            </button>
+            <button
+              onClick={() =>
+                void window.api.saveSettings({
+                  platforms: {
+                    ...state.settings.platforms,
+                    twitch: { ...twitch, enabled: !twitch.enabled },
+                  },
+                })
+              }
+            >
+              {twitch.enabled ? "Deshabilitar monitor" : "Habilitar monitor"}
+            </button>
+          </div>
+        </article>
+        <article>
+          <h3>Kick</h3>
+          <p>
+            Mensajería automática no disponible para Kick mediante la API
+            oficial actual.
+          </p>
+          <small>
+            No se usa DOM, Playwright, scraping, pulsaciones ni cookies.
+          </small>
+        </article>
+      </div>
+    </section>
+  );
+}
+function Streamers({ state }: { state: AppState }) {
+  const [form, setForm] = useState<Partial<Streamer>>({
+    platform: "twitch",
+    enabled: true,
+    automation: defaultAutomation(),
+  });
+  const automation = form.automation ?? defaultAutomation();
+  async function save() {
+    await window.api.saveStreamer(form);
+    setForm({
+      platform: "twitch",
+      enabled: true,
+      automation: defaultAutomation(),
+    });
+  }
+  return (
+    <section>
+      <h2>Streamers</h2>
+      <article>
+        <h3>{form.id ? "Editar" : "Añadir"} streamer</h3>
+        <div className="form">
+          <label>
+            Plataforma
+            <select
+              value={form.platform}
+              onChange={(event) =>
+                setForm({ ...form, platform: event.target.value as Platform })
+              }
+            >
+              <option value="twitch">Twitch</option>
+              <option value="kick">Kick</option>
+            </select>
+          </label>
+          <label>
+            Nombre exacto
+            <input
+              maxLength={60}
+              value={form.displayName ?? ""}
+              onChange={(event) =>
+                setForm({ ...form, displayName: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            ID del broadcaster
+            <input
+              maxLength={64}
+              value={form.externalId ?? ""}
+              onChange={(event) =>
+                setForm({ ...form, externalId: event.target.value })
+              }
+            />
+          </label>
+        </div>
+        <h4>Mensajería automática autorizada</h4>
+        {form.platform === "kick" && (
+          <p className="warning">
+            Mensajería automática no disponible para Kick mediante la API
+            oficial actual.
+          </p>
+        )}
+        <div className="form">
+          <Check
+            label="Habilitada"
+            checked={automation.enabled}
+            set={(enabled) =>
+              setForm({ ...form, automation: { ...automation, enabled } })
+            }
+          />
+          <Check
+            label="Autorización confirmada por el propietario"
+            checked={automation.authorized}
+            set={(authorized) =>
+              setForm({ ...form, automation: { ...automation, authorized } })
+            }
+          />
+          <Check
+            label="Enviar al comenzar"
+            checked={automation.sendOnStart}
+            set={(sendOnStart) =>
+              setForm({ ...form, automation: { ...automation, sendOnStart } })
+            }
+          />
+          <Check
+            label="Repetir"
+            checked={automation.repeat}
+            set={(repeat) =>
+              setForm({ ...form, automation: { ...automation, repeat } })
+            }
+          />
+          <label>
+            Intervalo (mín. 15 min)
+            <input
+              type="number"
+              min="15"
+              value={automation.intervalMinutes}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  automation: {
+                    ...automation,
+                    intervalMinutes: Math.max(15, +event.target.value),
+                  },
+                })
+              }
+            />
+          </label>
+          <label>
+            Máximo (1–5)
+            <input
+              type="number"
+              min="1"
+              max="5"
+              value={automation.maxPerStream}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  automation: {
+                    ...automation,
+                    maxPerStream: Math.min(5, Math.max(1, +event.target.value)),
+                  },
+                })
+              }
+            />
+          </label>
+          <label>
+            Mensaje (máx. 500)
+            <input
+              maxLength={500}
+              value={automation.message}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  automation: { ...automation, message: event.target.value },
+                })
+              }
+            />
+          </label>
+          <button className="primary" onClick={() => void save()}>
+            Guardar
+          </button>
+        </div>
+        {form.automation?.authorizedAt && (
+          <small>
+            Autorizado:{" "}
+            {new Date(form.automation.authorizedAt).toLocaleString()}
+          </small>
+        )}
+      </article>
+      <div className="list">
+        {state.streamers.map((item) => (
+          <article key={item.id}>
+            <div>
+              <b>{item.displayName}</b>
+              <span>
+                {item.platform} · {item.live ? "En directo" : "Desconectado"} ·
+                bot {item.automation.enabled ? "activo" : "inactivo"}
+              </span>
+              <small>
+                Autorización:{" "}
+                {item.automation.authorizedAt
+                  ? new Date(item.automation.authorizedAt).toLocaleString()
+                  : "no confirmada"}{" "}
+                · enviados: {item.automationRuntime.sentCount}
+              </small>
+            </div>
+            <div className="actions">
+              <button onClick={() => setForm(item)}>Editar</button>
+              <button
+                className="danger"
+                onClick={() =>
+                  confirm(`¿Eliminar ${item.displayName}?`) &&
+                  void window.api.deleteStreamer(item.id)
+                }
+              >
+                Eliminar
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+function Check({
+  label,
+  checked,
+  set,
+}: {
+  label: string;
+  checked: boolean;
+  set: (value: boolean) => void;
+}) {
+  return (
+    <label className="check">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => set(event.target.checked)}
+      />
+      {label}
+    </label>
+  );
+}
+function Settings({ state }: { state: AppState }) {
+  const settings = state.settings;
+  const save = (value: Partial<AppState["settings"]>) =>
+    void window.api.saveSettings(value);
+  return (
+    <section>
+      <h2>Ajustes</h2>
+      <div className="form settings">
+        <label>
+          Intervalo del monitor
+          <input
+            type="number"
+            min="5"
+            value={settings.scanMinutes}
+            onChange={(event) =>
+              save({ scanMinutes: Math.max(5, +event.target.value) })
+            }
+          />
+        </label>
+        <label>
+          Navegador
+          <select
+            value={settings.browserMode}
+            onChange={(event) =>
+              save({ browserMode: event.target.value as "default" | "managed" })
+            }
+          >
+            <option value="default">Predeterminado</option>
+            <option value="managed">Gestionado (silenciado)</option>
+          </select>
+        </label>
+        {(
+          [
+            "startup",
+            "startMinimized",
+            "minimizeToTray",
+            "notifications",
+            "closeManagedTabs",
+          ] as const
+        ).map((key) => (
+          <Check
+            key={key}
+            label={key}
+            checked={settings[key]}
+            set={(value) => save({ [key]: value })}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+function Activity({ state }: { state: AppState }) {
+  return (
+    <section>
+      <h2>Actividad</h2>
+      <div className="actions">
+        <button
+          onClick={() =>
+            void window.api.copy(
+              state.activity
+                .map((x) => `${x.at} ${x.level} ${x.description}`)
+                .join("\n"),
+            )
+          }
+        >
+          Copiar registros
+        </button>
+        <button
+          className="danger"
+          onClick={() =>
+            confirm("¿Limpiar el historial?") && void window.api.clearActivity()
+          }
+        >
+          Limpiar
+        </button>
+      </div>
+      <div className="list">
+        {state.activity.map((item) => (
+          <article key={item.id}>
+            <time>{new Date(item.at).toLocaleString()}</time>
+            <b>{item.level}</b>
+            <span>
+              {item.platform} {item.channel}
+            </span>
+            <p>{item.description}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+function Contact() {
+  return (
+    <section>
+      <h2>Contacto</h2>
+      <article>
+        <a
+          onClick={() =>
+            void window.api.open("mailto:contacto@vortexstudio.es")
+          }
+        >
+          contacto@vortexstudio.es
+        </a>
+      </article>
+    </section>
+  );
+}

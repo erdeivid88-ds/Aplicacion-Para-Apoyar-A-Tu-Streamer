@@ -1,17 +1,550 @@
-import {app,BrowserWindow,ipcMain,shell,Tray,Menu,Notification,dialog,nativeImage} from 'electron'; import Store from 'electron-store'; import {join,dirname} from 'node:path'; import {fileURLToPath} from 'node:url'; import {randomUUID} from 'node:crypto'; import {createRequire} from 'node:module'; const require=createRequire(import.meta.url); const __dirname=dirname(fileURLToPath(import.meta.url));
-import {existsSync} from 'node:fs';
-import {defaults,type AppState,type Streamer} from '../../src/domain/types'; import {ScanLock,transition} from '../../src/domain/monitor'; import {isDuplicate,normalizeName,validName} from '../../src/domain/channels'; import {parseImport} from '../../src/domain/import'; import {TwitchProvider,KickProvider} from './providers';
-const store=new Store<AppState>({name:'app-data',defaults}); let win:BrowserWindow|null=null,tray:Tray|null=null,timer:NodeJS.Timeout|null=null,quitting=false; const managed=new Map<string,BrowserWindow>(); const lock=new ScanLock();
-const state=()=>store.store; const emit=()=>win?.webContents.send('state:changed',state());
-function log(description:string,level:'info'|'warning'|'error'='info',s?:Streamer){const list=store.get('activity',[]);store.set('activity',[{id:randomUUID(),at:new Date().toISOString(),level,platform:s?.platform,channel:s?.displayName,description},...list].slice(0,2000));}
-const safeExternal=(url:string)=>{const u=new URL(url);if(u.protocol!=='https:'&&u.protocol!=='mailto:')throw new Error('Enlace no permitido.');if(u.protocol==='https:'&&!['twitch.tv','www.twitch.tv','kick.com','www.kick.com','ids.vortexstudio.es'].includes(u.hostname))throw new Error('Dominio no permitido.');return shell.openExternal(url)};
-async function openStream(s:Streamer){if(store.get('settings.browserMode')==='managed'){const bw=new BrowserWindow({width:1100,height:760,webPreferences:{partition:'persist:managed-browser',contextIsolation:true,nodeIntegration:false,sandbox:true}});bw.webContents.setAudioMuted(true);await bw.loadURL(s.url);managed.set(s.id,bw);bw.on('closed',()=>managed.delete(s.id));}else await safeExternal(s.url);if(store.get('settings.notifications'))new Notification({title:`${s.displayName} está en directo`,body:s.title??'Se ha abierto el canal.'}).show();}
-async function scan(){return lock.run(async()=>{store.set('monitor.status','checking');log('Barrido iniciado.');emit();let partial=false;const items=[...store.get('streamers')];for(let i=0;i<items.length;i++){const s=items[i];if(!s.enabled||!store.get(`settings.platforms.${s.platform}.enabled`))continue;try{const provider=s.platform==='twitch'?new TwitchProvider():new KickProvider();const result=await provider.check(s,store.get(`settings.platforms.${s.platform}`));const t=transition(s,result);items[i]={...s,...result,lastCheckedAt:new Date().toISOString(),lastError:undefined};if(t.shouldOpen){await openStream(items[i]);items[i].openedSessionId=result.sessionId;items[i].openedAt=new Date().toISOString();log('Canal detectado y abierto en directo.', 'info',s)}if(t.ended){log('El directo ha terminado.','info',s);const tab=managed.get(s.id);if(tab&&store.get('settings.closeManagedTabs'))tab.close()}}catch(e){partial=true;items[i]={...s,lastCheckedAt:new Date().toISOString(),lastError:e instanceof Error?e.message:'Error desconocido'};log(items[i].lastError!,'error',s)}}store.set('streamers',items);const now=Date.now();store.set('monitor',{status:partial?'partial-error':'active',lastScan:new Date(now).toISOString(),nextScan:new Date(now+store.get('settings.scanMinutes')*60000).toISOString(),errors:items.flatMap(x=>x.lastError?[x.lastError]:[]).slice(0,5)});log('Barrido terminado.');emit();return true})}
-function schedule(){if(timer)clearInterval(timer);timer=setInterval(()=>void scan(),Math.max(5,store.get('settings.scanMinutes'))*60000)}
-function start(){store.set('monitor.status','starting');log('Monitor encendido.');schedule();emit();void scan()}
-function stop(){if(timer)clearInterval(timer);timer=null;store.set('monitor.status','off');store.set('monitor.nextScan',undefined);log('Monitor apagado.');emit()}
-function register(){ipcMain.handle('state:get',()=>state());ipcMain.handle('monitor:start',()=>start());ipcMain.handle('monitor:stop',()=>stop());ipcMain.handle('monitor:scan',()=>scan());ipcMain.handle('streamer:save',(_e,input:Partial<Streamer>)=>{if(!input.platform||!input.displayName||!validName(input.displayName))throw new Error('Nombre de canal no válido.');const list=store.get('streamers');const item:Streamer={id:input.id??randomUUID(),platform:input.platform,displayName:input.displayName.trim(),normalizedName:normalizeName(input.displayName),externalId:input.externalId?.trim()||undefined,url:`https://${input.platform==='twitch'?'www.twitch.tv':'kick.com'}/${normalizeName(input.displayName)}`,enabled:input.enabled??true,live:input.live??false};if(isDuplicate(list.filter(x=>x.id!==item.id),item))throw new Error('El canal ya estaba añadido.');store.set('streamers',input.id?list.map(x=>x.id===item.id?{...x,...item}:x):[...list,item]);log('Configuración de streamer modificada.');emit()});ipcMain.handle('streamer:delete',(_e,id:string)=>{store.set('streamers',store.get('streamers').filter(x=>x.id!==id));log('Streamer eliminado.');emit()});ipcMain.handle('settings:save',(_e,patch:any)=>{store.set('settings',{...store.get('settings'),...patch,platforms:{...store.get('settings.platforms'),...(patch.platforms??{})}});app.setLoginItemSettings({openAtLogin:store.get('settings.startup'),openAsHidden:store.get('settings.startMinimized')});schedule();log('Configuración modificada.');emit()});ipcMain.handle('external:open',(_e,url:string)=>safeExternal(url));ipcMain.handle('clipboard:write',(_e,text:string)=>{const {clipboard}=require('electron');clipboard.writeText(text)});ipcMain.handle('activity:clear',()=>{store.set('activity',[]);emit()});ipcMain.handle('data:export',async()=>{const result=await dialog.showSaveDialog({defaultPath:'apoya-a-tu-streamer.json',filters:[{name:'JSON',extensions:['json']}]});if(!result.canceled&&result.filePath){const {writeFile}=await import('node:fs/promises');await writeFile(result.filePath,JSON.stringify({settings:store.get('settings'),streamers:store.get('streamers')},null,2))}});ipcMain.handle('data:import',async()=>{const result=await dialog.showOpenDialog({filters:[{name:'JSON',extensions:['json']}],properties:['openFile']});if(!result.canceled){const {readFile}=await import('node:fs/promises');const parsed=parseImport(await readFile(result.filePaths[0],'utf8'));store.set('streamers',parsed.streamers as Streamer[]);emit()}})}
-async function loadRenderer(window:BrowserWindow){const devServerUrl=process.env.VITE_DEV_SERVER_URL;if(devServerUrl){console.info(`[renderer] Loading development URL: ${devServerUrl}`);try{await window.loadURL(devServerUrl)}catch(error){console.error('[renderer] Failed to load development URL.',error)}return}const appPath=app.getAppPath();const indexPath=join(appPath,'dist','index.html');console.info(`[renderer] app.getAppPath(): ${appPath}`);console.info(`[renderer] Loading production file: ${indexPath} (exists: ${existsSync(indexPath)})`);try{await window.loadFile(indexPath)}catch(error){console.error(`[renderer] Failed to load production file: ${indexPath}`,error)}}
-function createWindow(){win=new BrowserWindow({width:1180,height:760,minWidth:760,minHeight:560,show:!store.get('settings.startMinimized'),autoHideMenuBar:true,webPreferences:{preload:join(__dirname,'../preload/index.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});win.setMenuBarVisibility(false);win.webContents.setWindowOpenHandler(({url})=>{void safeExternal(url);return{action:'deny'}});win.webContents.on('did-fail-load',(_event,errorCode,errorDescription,validatedURL,isMainFrame)=>{console.error('[renderer] did-fail-load',{errorCode,errorDescription,validatedURL,isMainFrame})});win.webContents.on('render-process-gone',(_event,details)=>{console.error('[renderer] render-process-gone',details)});void loadRenderer(win);win.on('close',e=>{if(store.get('settings.minimizeToTray')&&!quitting){e.preventDefault();win?.hide()}})}
-function createTray(){tray=new Tray(nativeImage.createEmpty());tray.setToolTip('Apoya a tu Streamer');tray.setContextMenu(Menu.buildFromTemplate([{label:'Abrir aplicación',click:()=>win?.show()},{label:'Encender monitor',click:start},{label:'Apagar monitor',click:stop},{label:'Ejecutar barrido ahora',click:()=>void scan()},{type:'separator'},{label:'Salir completamente',click:()=>{quitting=true;app.quit()}}]))}
-app.whenReady().then(()=>{Menu.setApplicationMenu(null);register();createWindow();createTray()});app.on('window-all-closed',()=>{if(process.platform!=='darwin'&&!store.get('settings.minimizeToTray'))app.quit()});
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  Notification,
+  shell,
+  Tray,
+} from "electron";
+import Store from "electron-store";
+import { existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  decideAutomation,
+  normalizeAutomation,
+  recordFailure,
+  recordSuccess,
+  sanitizeMessage,
+} from "../../src/domain/automation";
+import {
+  isDuplicate,
+  normalizeName,
+  validName,
+} from "../../src/domain/channels";
+import { parseImport } from "../../src/domain/import";
+import { ScanLock, transition } from "../../src/domain/monitor";
+import {
+  defaultAutomation,
+  defaultRuntime,
+  defaults,
+  type AppState,
+  type BotStatus,
+  type Streamer,
+} from "../../src/domain/types";
+import { openOrReuseManaged } from "./managed-window";
+import { KickProvider, TwitchProvider } from "./providers";
+import { TwitchApiError, TwitchAuth } from "./twitch-auth";
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const store = new Store<AppState>({ name: "app-data", defaults });
+let win: BrowserWindow | null = null,
+  tray: Tray | null = null,
+  timer: NodeJS.Timeout | null = null,
+  quitting = false;
+const managed = new Map<string, BrowserWindow>();
+const lock = new ScanLock();
+const auth = new TwitchAuth(() =>
+  store.get("settings.platforms.twitch.clientId"),
+);
+function migrate() {
+  const raw = store.store as AppState;
+  store.set("schemaVersion", 2);
+  store.set("bot", raw.bot ?? { status: "disconnected" });
+  store.set(
+    "streamers",
+    (raw.streamers ?? []).map((s) => ({
+      ...s,
+      automation: normalizeAutomation(s.automation ?? defaultAutomation()),
+      automationRuntime: s.automationRuntime ?? defaultRuntime(),
+    })),
+  );
+  const platforms = raw.settings.platforms as Record<
+    string,
+    { enabled: boolean; clientId?: string; accessToken?: string }
+  >;
+  if (platforms.twitch?.accessToken || platforms.kick?.accessToken) {
+    delete platforms.twitch?.accessToken;
+    delete platforms.kick?.accessToken;
+    store.set(
+      "settings.platforms",
+      platforms as AppState["settings"]["platforms"],
+    );
+  }
+}
+const state = () => store.store;
+const emit = () =>
+  win && !win.isDestroyed() && win.webContents.send("state:changed", state());
+function log(
+  description: string,
+  level: "info" | "warning" | "error" = "info",
+  s?: Streamer,
+) {
+  store.set(
+    "activity",
+    [
+      {
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        level,
+        platform: s?.platform,
+        channel: s?.displayName,
+        description,
+      },
+      ...store.get("activity", []),
+    ].slice(0, 2000),
+  );
+}
+const safeExternal = (value: string) => {
+  const url = new URL(value);
+  if (url.protocol !== "https:" && url.protocol !== "mailto:")
+    throw new Error("Enlace no permitido.");
+  if (
+    url.protocol === "https:" &&
+    ![
+      "twitch.tv",
+      "www.twitch.tv",
+      "kick.com",
+      "www.kick.com",
+      "ids.vortexstudio.es",
+      "dev.twitch.tv",
+    ].includes(url.hostname)
+  )
+    throw new Error("Dominio no permitido.");
+  return shell.openExternal(url.toString());
+};
+async function openStream(s: Streamer) {
+  if (store.get("settings.browserMode") === "managed") {
+    const existing = managed.get(s.id);
+    const result = (await openOrReuseManaged(
+      existing,
+      () =>
+        new BrowserWindow({
+          width: 1100,
+          height: 760,
+          webPreferences: {
+            partition: "persist:managed-browser",
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+          },
+        }),
+      s.url,
+    )) as BrowserWindow;
+    managed.set(s.id, result);
+    if (!existing) result.once("closed", () => managed.delete(s.id));
+  } else await safeExternal(s.url);
+  if (store.get("settings.notifications"))
+    new Notification({
+      title: `${s.displayName} está en directo`,
+      body: s.title ?? "Se ha abierto el canal.",
+    }).show();
+}
+function botStatus(error: unknown): BotStatus {
+  return error instanceof TwitchApiError
+    ? error.status === 401
+      ? "expired"
+      : error.status === 403
+        ? "insufficient-permissions"
+        : error.status === 429
+          ? "rate-limited"
+          : "disconnected"
+    : "disconnected";
+}
+async function automate(s: Streamer) {
+  const decision = decideAutomation(s, Date.now());
+  s.automationRuntime = decision.runtime;
+  if (decision.reason === "unauthorized" && s.automation.enabled)
+    store.set("bot.status", "unauthorized-channel");
+  if (!decision.send) return;
+  if (store.get("bot.status") !== "connected") return;
+  try {
+    const broadcasterId =
+      s.externalId ?? (await auth.resolveBroadcaster(s.normalizedName));
+    const bot = await auth.validate();
+    await auth.send(
+      broadcasterId,
+      bot.userId,
+      sanitizeMessage(s.automation.message),
+    );
+    s.externalId = broadcasterId;
+    s.automationRuntime = recordSuccess(
+      s.automationRuntime,
+      new Date().toISOString(),
+    );
+    log(
+      `Mensaje automático enviado (${s.automationRuntime.sentCount}/${s.automation.maxPerStream}).`,
+      "info",
+      s,
+    );
+  } catch (error) {
+    s.automationRuntime = recordFailure(s.automationRuntime);
+    const status = botStatus(error);
+    store.set("bot", {
+      ...store.get("bot"),
+      status,
+      detail: error instanceof Error ? error.message : "Error de Twitch",
+    });
+    log(
+      `Fallo de mensajería automática (${s.automationRuntime.consecutiveErrors}/3): ${error instanceof Error ? error.message : "error"}.`,
+      "error",
+      s,
+    );
+    if (s.automationRuntime.paused) {
+      store.set("bot.status", "paused");
+      log(
+        "Automatización pausada tras tres errores consecutivos.",
+        "warning",
+        s,
+      );
+    }
+  }
+}
+async function scan() {
+  return lock.run(async () => {
+    store.set("monitor.status", "checking");
+    emit();
+    let partial = false;
+    const items = [...store.get("streamers")];
+    for (let i = 0; i < items.length; i++) {
+      const previous = items[i];
+      if (
+        !previous.enabled ||
+        !store.get(`settings.platforms.${previous.platform}.enabled`)
+      )
+        continue;
+      try {
+        let accessToken: string | undefined;
+        if (previous.platform === "twitch")
+          accessToken = await auth.accessToken();
+        const provider =
+          previous.platform === "twitch"
+            ? new TwitchProvider()
+            : new KickProvider();
+        const result = await provider.check(previous, {
+          clientId: store.get(
+            `settings.platforms.${previous.platform}.clientId`,
+          ),
+          accessToken,
+        });
+        const change = transition(previous, result);
+        const current = {
+          ...previous,
+          ...result,
+          lastCheckedAt: new Date().toISOString(),
+          lastError: undefined,
+        };
+        if (change.shouldOpen) {
+          await openStream(current);
+          current.openedSessionId = result.sessionId;
+          current.openedAt = new Date().toISOString();
+          log("Canal detectado y abierto en directo.", "info", current);
+        }
+        if (change.ended) {
+          current.automationRuntime = defaultRuntime();
+          log("El directo ha terminado; mensajería detenida.", "info", current);
+          const tab = managed.get(current.id);
+          if (tab && store.get("settings.closeManagedTabs")) tab.close();
+        }
+        await automate(current);
+        items[i] = current;
+      } catch (error) {
+        partial = true;
+        items[i] = {
+          ...previous,
+          lastCheckedAt: new Date().toISOString(),
+          lastError:
+            error instanceof Error ? error.message : "Error desconocido",
+        };
+        log(items[i].lastError!, "error", previous);
+      }
+    }
+    store.set("streamers", items);
+    const now = Date.now();
+    store.set("monitor", {
+      status: partial ? "partial-error" : "active",
+      lastScan: new Date(now).toISOString(),
+      nextScan: new Date(
+        now + store.get("settings.scanMinutes") * 60000,
+      ).toISOString(),
+      errors: items
+        .flatMap((x) => (x.lastError ? [x.lastError] : []))
+        .slice(0, 5),
+    });
+    emit();
+    return true;
+  });
+}
+function schedule() {
+  if (timer) clearInterval(timer);
+  timer = setInterval(
+    () => void scan(),
+    Math.max(5, store.get("settings.scanMinutes")) * 60000,
+  );
+}
+function start() {
+  schedule();
+  store.set("monitor.status", "starting");
+  emit();
+  void scan();
+}
+function stop() {
+  if (timer) clearInterval(timer);
+  timer = null;
+  store.set("monitor.status", "off");
+  store.set("monitor.nextScan", undefined);
+  emit();
+}
+function assertSender(event: Electron.IpcMainInvokeEvent) {
+  if (!win || event.sender !== win.webContents)
+    throw new Error("IPC no autorizado.");
+}
+function register() {
+  const handle = (name: string, fn: (...args: unknown[]) => unknown) =>
+    ipcMain.handle(name, (event, ...args) => {
+      assertSender(event);
+      return fn(...args);
+    });
+  handle("state:get", () => state());
+  handle("monitor:start", () => start());
+  handle("monitor:stop", () => stop());
+  handle("monitor:scan", () => scan());
+  handle("bot:connect", async () => {
+    try {
+      const bot = await auth.connect();
+      store.set("bot", bot);
+      emit();
+    } catch (error) {
+      store.set("bot", {
+        status: botStatus(error),
+        detail: error instanceof Error ? error.message : "Error OAuth",
+      });
+      emit();
+      throw error;
+    }
+  });
+  handle("bot:disconnect", () => {
+    auth.clear();
+    store.set("bot", { status: "disconnected" });
+    emit();
+  });
+  handle("streamer:save", (value) => {
+    const input = value as Partial<Streamer>;
+    if (!input.platform || !input.displayName || !validName(input.displayName))
+      throw new Error("Nombre de canal no válido.");
+    const list = store.get("streamers");
+    const old = list.find((x) => x.id === input.id);
+    const automation = normalizeAutomation(
+      input.automation ?? old?.automation ?? defaultAutomation(),
+    );
+    if (automation.authorized && !old?.automation.authorized)
+      automation.authorizedAt = new Date().toISOString();
+    if (!automation.authorized) automation.authorizedAt = undefined;
+    const item: Streamer = {
+      ...(old ?? {}),
+      id: input.id ?? randomUUID(),
+      platform: input.platform,
+      displayName: input.displayName.trim(),
+      normalizedName: normalizeName(input.displayName),
+      externalId: input.externalId?.trim() || undefined,
+      url: `https://${input.platform === "twitch" ? "www.twitch.tv" : "kick.com"}/${normalizeName(input.displayName)}`,
+      enabled: input.enabled ?? true,
+      live: old?.live ?? false,
+      automation,
+      automationRuntime: old?.automationRuntime ?? defaultRuntime(),
+    };
+    if (
+      isDuplicate(
+        list.filter((x) => x.id !== item.id),
+        item,
+      )
+    )
+      throw new Error("El canal ya estaba añadido.");
+    store.set(
+      "streamers",
+      old ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item],
+    );
+    emit();
+  });
+  handle("streamer:delete", (value) => {
+    if (typeof value !== "string") throw new Error("ID no válido.");
+    store.set(
+      "streamers",
+      store.get("streamers").filter((x) => x.id !== value),
+    );
+    emit();
+  });
+  handle("settings:save", (value) => {
+    const patch = value as Partial<AppState["settings"]>;
+    const allowed: Partial<AppState["settings"]> = {};
+    for (const key of [
+      "scanMinutes",
+      "idleMinutes",
+      "autoStart",
+      "countdownSeconds",
+      "startup",
+      "startMinimized",
+      "minimizeToTray",
+      "notifications",
+      "browserMode",
+      "closeManagedTabs",
+      "theme",
+      "showStartNotice",
+    ] as const)
+      if (patch[key] !== undefined)
+        (allowed as Record<string, unknown>)[key] = patch[key];
+    if (patch.platforms)
+      allowed.platforms = {
+        ...store.get("settings.platforms"),
+        ...patch.platforms,
+        twitch: {
+          ...store.get("settings.platforms.twitch"),
+          ...patch.platforms.twitch,
+        },
+        kick: {
+          ...store.get("settings.platforms.kick"),
+          ...patch.platforms.kick,
+        },
+      };
+    store.set("settings", { ...store.get("settings"), ...allowed });
+    schedule();
+    emit();
+  });
+  handle("external:open", (value) => {
+    if (typeof value !== "string" || value.length > 2048)
+      throw new Error("URL no válida.");
+    return safeExternal(value);
+  });
+  handle("clipboard:write", (value) => {
+    if (typeof value !== "string" || value.length > 100000)
+      throw new Error("Texto no válido.");
+    clipboard.writeText(value);
+  });
+  handle("activity:clear", () => {
+    store.set("activity", []);
+    emit();
+  });
+  handle("data:export", async () => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: "apoya-a-tu-streamer.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (!result.canceled && result.filePath)
+      await writeFile(
+        result.filePath,
+        JSON.stringify(
+          {
+            settings: store.get("settings"),
+            streamers: store.get("streamers"),
+          },
+          null,
+          2,
+        ),
+      );
+  });
+  handle("data:import", async () => {
+    const result = await dialog.showOpenDialog({
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      properties: ["openFile"],
+    });
+    if (!result.canceled) {
+      const parsed = parseImport(await readFile(result.filePaths[0], "utf8"));
+      store.set("streamers", parsed.streamers as Streamer[]);
+      emit();
+    }
+  });
+}
+async function loadRenderer(window: BrowserWindow) {
+  const dev = process.env.VITE_DEV_SERVER_URL;
+  if (dev) {
+    await window.loadURL(dev);
+    return;
+  }
+  const path = join(app.getAppPath(), "dist", "index.html");
+  if (!existsSync(path)) throw new Error(`Renderer no encontrado: ${path}`);
+  await window.loadFile(path);
+}
+function createWindow() {
+  win = new BrowserWindow({
+    width: 1180,
+    height: 760,
+    minWidth: 760,
+    minHeight: 560,
+    show: !store.get("settings.startMinimized"),
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, "../preload/index.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  win.setMenuBarVisibility(false);
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    void safeExternal(url);
+    return { action: "deny" };
+  });
+  void loadRenderer(win);
+  win.on("close", (event) => {
+    if (store.get("settings.minimizeToTray") && !quitting) {
+      event.preventDefault();
+      win?.hide();
+    }
+  });
+}
+function createTray() {
+  tray = new Tray(nativeImage.createEmpty());
+  tray.setToolTip("Apoya a tu Streamer");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: "Abrir aplicación",
+        click: () => {
+          win?.show();
+          win?.focus();
+        },
+      },
+      { label: "Encender monitor", click: start },
+      { label: "Apagar monitor", click: stop },
+      { type: "separator" },
+      {
+        label: "Salir completamente",
+        click: () => {
+          quitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+}
+app.whenReady().then(async () => {
+  migrate();
+  Menu.setApplicationMenu(null);
+  register();
+  createWindow();
+  createTray();
+  try {
+    store.set("bot", await auth.validate());
+  } catch (error) {
+    store.set("bot", {
+      status: botStatus(error),
+      detail: error instanceof Error ? error.message : undefined,
+    });
+  }
+  emit();
+});
+app.on("before-quit", () => {
+  quitting = true;
+  stop();
+  for (const window of managed.values())
+    if (!window.isDestroyed()) window.close();
+});
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin" && !store.get("settings.minimizeToTray"))
+    app.quit();
+});
