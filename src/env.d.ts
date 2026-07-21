@@ -1,4 +1,9 @@
-import type { AppState, Settings, Streamer } from "./domain/types";
+import type {
+  AppState,
+  Settings,
+  Streamer,
+  TwitchAccountType,
+} from "./domain/types";
 declare global {
   interface Window {
     api: {
@@ -7,8 +12,10 @@ declare global {
       start: () => Promise<void>;
       stop: () => Promise<void>;
       scan: () => Promise<void>;
-      connectBot: () => Promise<void>;
+      connectTwitch: (type: TwitchAccountType) => Promise<void>;
       disconnectBot: () => Promise<void>;
+      switchTwitchType: (type: TwitchAccountType) => Promise<void>;
+      checkTwitchPermissions: () => Promise<void>;
       saveStreamer: (value: Partial<Streamer>) => Promise<void>;
       deleteStreamer: (id: string) => Promise<void>;
       saveSettings: (value: Partial<Settings>) => Promise<void>;

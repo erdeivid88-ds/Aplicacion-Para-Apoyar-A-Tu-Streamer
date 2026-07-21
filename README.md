@@ -4,9 +4,9 @@ Aplicación Electron para Windows 10/11 x64 que monitoriza canales de Twitch y K
 
 No simula actividad humana, envía spam, automatiza el DOM, manipula cookies ni evade moderación, antifraude o límites.
 
-## Mensajería Twitch
+## Cuentas y mensajería Twitch
 
-La integración usa exclusivamente OAuth oficial (Authorization Code con PKCE), validación y renovación automática, resolución de `broadcaster_id`/`sender_id` y el endpoint Helix de chat. Los scopes mínimos solicitados a la cuenta bot son `user:write:chat` y `user:bot`. El propietario del canal debe confirmar la autorización en la aplicación y dar al bot la capacidad oficial de escribir en su canal según los requisitos de Twitch.
+La integración usa exclusivamente OAuth oficial (Authorization Code con PKCE), validación y renovación automática, resolución de `broadcaster_id`/`sender_id` y el endpoint Helix de chat. Hay dos modos excluyentes por perfil local: **Personal**, con únicamente `user:write:chat`, y **Bot**, con `user:write:chat` y `user:bot`. La cuenta personal escribe con su identidad real; la cuenta bot usa una identidad separada. Cambiar de modo elimina primero los tokens cifrados anteriores.
 
 Los tokens se cifran con `safeStorage` en el proceso principal. Nunca llegan al renderer, registros ni exportaciones. Cada canal configura mensaje, envío inicial, repetición, intervalo (mínimo 15 minutos) y máximo por directo (hasta 5). El estado del directo y los envíos se persisten para evitar duplicados después de reiniciar. La automatización se detiene al terminar el directo y se pausa tras tres fallos consecutivos.
 

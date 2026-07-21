@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppState, Settings, Streamer } from "../../src/domain/types";
+import type {
+  AppState,
+  Settings,
+  Streamer,
+  TwitchAccountType,
+} from "../../src/domain/types";
 contextBridge.exposeInMainWorld("api", {
   state: (): Promise<AppState> => ipcRenderer.invoke("state:get"),
   onState: (callback: (state: AppState) => void) => {
@@ -11,8 +16,12 @@ contextBridge.exposeInMainWorld("api", {
   start: () => ipcRenderer.invoke("monitor:start"),
   stop: () => ipcRenderer.invoke("monitor:stop"),
   scan: () => ipcRenderer.invoke("monitor:scan"),
-  connectBot: () => ipcRenderer.invoke("bot:connect"),
+  connectTwitch: (type: TwitchAccountType) =>
+    ipcRenderer.invoke("bot:connect", type),
   disconnectBot: () => ipcRenderer.invoke("bot:disconnect"),
+  switchTwitchType: (type: TwitchAccountType) =>
+    ipcRenderer.invoke("bot:switch-type", type),
+  checkTwitchPermissions: () => ipcRenderer.invoke("bot:check"),
   saveStreamer: (value: Partial<Streamer>) =>
     ipcRenderer.invoke("streamer:save", value),
   deleteStreamer: (id: string) => ipcRenderer.invoke("streamer:delete", id),

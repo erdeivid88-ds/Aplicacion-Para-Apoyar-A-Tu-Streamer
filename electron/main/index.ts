@@ -30,6 +30,7 @@ import {
 } from "../../src/domain/channels";
 import { parseImport } from "../../src/domain/import";
 import { ScanLock, transition } from "../../src/domain/monitor";
+import { migrateConnectionFrom102 } from "../../src/domain/twitch-account";
 import {
   defaultAutomation,
   defaultRuntime,
@@ -37,6 +38,7 @@ import {
   type AppState,
   type BotStatus,
   type Streamer,
+  type TwitchAccountType,
 } from "../../src/domain/types";
 import { openOrReuseManaged } from "./managed-window";
 import { KickProvider, TwitchProvider } from "./providers";
@@ -54,8 +56,8 @@ const auth = new TwitchAuth(() =>
 );
 function migrate() {
   const raw = store.store as AppState;
-  store.set("schemaVersion", 2);
-  store.set("bot", raw.bot ?? { status: "disconnected" });
+  store.set("schemaVersion", 3);
+  store.set("bot", migrateConnectionFrom102(raw.bot));
   store.set(
     "streamers",
     (raw.streamers ?? []).map((s) => ({
@@ -166,12 +168,7 @@ async function automate(s: Streamer) {
   try {
     const broadcasterId =
       s.externalId ?? (await auth.resolveBroadcaster(s.normalizedName));
-    const bot = await auth.validate();
-    await auth.send(
-      broadcasterId,
-      bot.userId,
-      sanitizeMessage(s.automation.message),
-    );
+    await auth.send(broadcasterId, sanitizeMessage(s.automation.message));
     s.externalId = broadcasterId;
     s.automationRuntime = recordSuccess(
       s.automationRuntime,
@@ -314,14 +311,17 @@ function register() {
   handle("monitor:start", () => start());
   handle("monitor:stop", () => stop());
   handle("monitor:scan", () => scan());
-  handle("bot:connect", async () => {
+  handle("bot:connect", async (value) => {
+    if (value !== "personal" && value !== "bot")
+      throw new Error("Tipo de cuenta no válido.");
     try {
-      const bot = await auth.connect();
+      const bot = await auth.connect(value as TwitchAccountType);
       store.set("bot", bot);
       emit();
     } catch (error) {
       store.set("bot", {
         status: botStatus(error),
+        accountType: value as TwitchAccountType,
         detail: error instanceof Error ? error.message : "Error OAuth",
       });
       emit();
@@ -332,6 +332,27 @@ function register() {
     auth.clear();
     store.set("bot", { status: "disconnected" });
     emit();
+  });
+  handle("bot:switch-type", (value) => {
+    if (value !== "personal" && value !== "bot")
+      throw new Error("Tipo de cuenta no válido.");
+    auth.clear();
+    store.set("bot", { status: "disconnected", accountType: value });
+    emit();
+  });
+  handle("bot:check", async () => {
+    try {
+      store.set("bot", await auth.validate());
+      emit();
+    } catch (error) {
+      store.set("bot", {
+        ...store.get("bot"),
+        status: botStatus(error),
+        detail: error instanceof Error ? error.message : "Error OAuth",
+      });
+      emit();
+      throw error;
+    }
   });
   handle("streamer:save", (value) => {
     const input = value as Partial<Streamer>;
@@ -532,6 +553,7 @@ app.whenReady().then(async () => {
     store.set("bot", await auth.validate());
   } catch (error) {
     store.set("bot", {
+      ...store.get("bot"),
       status: botStatus(error),
       detail: error instanceof Error ? error.message : undefined,
     });

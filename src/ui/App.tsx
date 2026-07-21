@@ -99,16 +99,49 @@ function Card({ value, label }: { value: string | number; label: string }) {
 }
 function Platforms({ state }: { state: AppState }) {
   const twitch = state.settings.platforms.twitch;
+  const [selectedType, setSelectedType] = useState<"personal" | "bot">(
+    state.bot.accountType ?? "personal",
+  );
+  const connected = state.bot.status === "connected";
   return (
     <section>
       <h2>Plataformas</h2>
       <div className="grid">
         <article>
-          <h3>Twitch — cuenta bot</h3>
+          <h3>Cuenta de Twitch conectada</h3>
           <p>
-            Estado: <b>{state.bot.status}</b>
+            Estado OAuth:{" "}
+            <b>
+              {connected
+                ? state.bot.accountType === "personal"
+                  ? "Cuenta personal conectada"
+                  : "Cuenta bot conectada"
+                : state.bot.status}
+            </b>
             {state.bot.displayName && ` · ${state.bot.displayName}`}
           </p>
+          <p>
+            Tipo:{" "}
+            <b>
+              {state.bot.accountType === "bot"
+                ? "Bot"
+                : state.bot.accountType === "personal"
+                  ? "Personal"
+                  : "Sin seleccionar"}
+            </b>
+          </p>
+          {state.bot.avatarUrl && (
+            <img
+              className="avatar"
+              src={state.bot.avatarUrl}
+              alt={`Avatar de ${state.bot.displayName ?? "Twitch"}`}
+            />
+          )}
+          {state.bot.scopes && (
+            <p>
+              <small>Scopes concedidos: {state.bot.scopes.join(", ")}</small>
+            </p>
+          )}
           {state.bot.detail && (
             <small className="error">{state.bot.detail}</small>
           )}
@@ -129,19 +162,56 @@ function Platforms({ state }: { state: AppState }) {
           </label>
           <p>
             <small>
-              OAuth oficial con PKCE y scopes <code>user:write:chat</code> y{" "}
-              <code>user:bot</code>.
+              La cuenta personal enviará con su nombre real de Twitch. La cuenta
+              bot enviará desde una cuenta separada. No se pueden conectar ambas
+              simultáneamente en el mismo perfil local.
             </small>
+          </p>
+          <label>
+            ¿Qué cuenta quieres conectar?
+            <select
+              value={selectedType}
+              onChange={(event) =>
+                setSelectedType(event.target.value as "personal" | "bot")
+              }
+              disabled={connected}
+            >
+              <option value="personal">Mi cuenta personal</option>
+              <option value="bot">Una cuenta bot</option>
+            </select>
+          </label>
+          <p>
+            <small>
+              {selectedType === "personal"
+                ? "Scope solicitado: user:write:chat."
+                : "Scopes solicitados: user:write:chat y user:bot."}
+            </small>
+          </p>
+          <p>
+            Cuenta que enviará el próximo mensaje:{" "}
+            <b>{connected ? state.bot.displayName : "ninguna"}</b>
           </p>
           <div className="actions">
             <button
               className="primary"
-              onClick={() => void window.api.connectBot()}
+              onClick={() => void window.api.connectTwitch(selectedType)}
             >
-              Conectar cuenta bot
+              Conectar
             </button>
             <button onClick={() => void window.api.disconnectBot()}>
               Desconectar
+            </button>
+            <button
+              onClick={() => {
+                const next = selectedType === "personal" ? "bot" : "personal";
+                setSelectedType(next);
+                void window.api.switchTwitchType(next);
+              }}
+            >
+              Cambiar tipo de cuenta
+            </button>
+            <button onClick={() => void window.api.checkTwitchPermissions()}>
+              Comprobar permisos
             </button>
             <button
               onClick={() =>
@@ -327,7 +397,7 @@ function Streamers({ state }: { state: AppState }) {
               <b>{item.displayName}</b>
               <span>
                 {item.platform} · {item.live ? "En directo" : "Desconectado"} ·
-                bot {item.automation.enabled ? "activo" : "inactivo"}
+                mensajería {item.automation.enabled ? "activa" : "inactiva"}
               </span>
               <small>
                 Autorización:{" "}

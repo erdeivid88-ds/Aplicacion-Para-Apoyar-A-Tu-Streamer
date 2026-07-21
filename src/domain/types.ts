@@ -1,4 +1,5 @@
 export type Platform = "twitch" | "kick";
+export type TwitchAccountType = "personal" | "bot";
 export type MonitorStatus =
   "off" | "starting" | "checking" | "active" | "paused" | "partial-error";
 export type BotStatus =
@@ -74,8 +75,11 @@ export interface Activity {
 }
 export interface BotConnection {
   status: BotStatus;
+  accountType?: TwitchAccountType;
   displayName?: string;
   userId?: string;
+  avatarUrl?: string;
+  scopes?: string[];
   expiresAt?: string;
   detail?: string;
 }
@@ -108,7 +112,7 @@ export const defaultRuntime = (): AutomationRuntime => ({
   paused: false,
 });
 export const defaults: AppState = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   settings: {
     scanMinutes: 15,
     idleMinutes: 10,
