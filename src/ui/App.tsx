@@ -5,7 +5,7 @@ import {
   type Platform,
   type Streamer,
 } from "../domain/types";
-import { TWITCH_REDIRECT_URI } from "../domain/twitch-oauth";
+import { MONITOR_LABELS, SETTINGS_CATEGORIES, validateSettings } from "../domain/settings-ui";
 const pages = [
   "Inicio",
   "Plataformas",
@@ -39,7 +39,7 @@ export default function App() {
       </aside>
       <main>
         <header>
-          Monitor: <b>{state.monitor.status}</b>
+          <b>{MONITOR_LABELS[state.monitor.status]}</b>
         </header>
         {page === "Inicio" && <Home state={state} />}{" "}
         {page === "Plataformas" && <Platforms state={state} />}{" "}
@@ -47,6 +47,11 @@ export default function App() {
         {page === "Ajustes" && <Settings state={state} />}{" "}
         {page === "Actividad" && <Activity state={state} />}{" "}
         {page === "Contacto" && <Contact />}
+        {state.monitor.toast && (
+          <div className="toast" role="status">
+            {state.monitor.toast}
+          </div>
+        )}
       </main>
     </div>
   );
@@ -98,7 +103,13 @@ function Card({ value, label }: { value: string | number; label: string }) {
     </article>
   );
 }
-function Platforms({ state }: { state: AppState }) {
+function Platforms({
+  state,
+  onClientId,
+}: {
+  state: AppState;
+  onClientId?: (value: string) => void;
+}) {
   const twitch = state.settings.platforms.twitch;
   const [selectedType, setSelectedType] = useState<"personal" | "bot">(
     state.bot.accountType ?? "personal",
@@ -152,24 +163,32 @@ function Platforms({ state }: { state: AppState }) {
               value={twitch.clientId ?? ""}
               maxLength={80}
               onChange={(event) =>
-                void window.api.saveSettings({
-                  platforms: {
-                    ...state.settings.platforms,
-                    twitch: { ...twitch, clientId: event.target.value },
-                  },
-                })
+                onClientId
+                  ? onClientId(event.target.value)
+                  : void window.api.saveSettings({
+                      platforms: {
+                        ...state.settings.platforms,
+                        twitch: { ...twitch, clientId: event.target.value },
+                      },
+                    })
               }
             />
           </label>
           <p>
-            URL de redirección que debes registrar en Twitch Developer Console:
+            <strong>Cliente público</strong>
           </p>
-          <p>
-            <code>{TWITCH_REDIRECT_URI}</code>
-          </p>
-          <button onClick={() => void window.api.copy(TWITCH_REDIRECT_URI)}>
-            Copiar URL de redirección
-          </button>
+          <small>
+            Esta aplicación de escritorio utiliza un cliente público de Twitch.
+            No necesita Client Secret.
+          </small>
+          <ol>
+            <li>Abre Twitch Developer Console.</li>
+            <li>Crea o administra una aplicación.</li>
+            <li>Selecciona el tipo de cliente Público.</li>
+            <li>Copia el Client ID.</li>
+            <li>Pégalo aquí.</li>
+            <li>Pulsa Conectar cuenta.</li>
+          </ol>
           <p>
             <small>
               La cuenta personal enviará con su nombre real de Twitch. La cuenta
@@ -206,7 +225,7 @@ function Platforms({ state }: { state: AppState }) {
               className="primary"
               onClick={() => void window.api.connectTwitch(selectedType)}
             >
-              Conectar
+              Conectar cuenta
             </button>
             <button onClick={() => void window.api.disconnectBot()}>
               Desconectar
@@ -236,6 +255,49 @@ function Platforms({ state }: { state: AppState }) {
               {twitch.enabled ? "Deshabilitar monitor" : "Habilitar monitor"}
             </button>
           </div>
+          {state.deviceAuth.status !== "idle" &&
+            state.deviceAuth.status !== "success" && (
+              <div className="device-flow">
+                <h4>Autorización del dispositivo</h4>
+                <p>
+                  Estado: <b>{state.deviceAuth.status}</b>
+                </p>
+                {state.deviceAuth.userCode && (
+                  <>
+                    <p>
+                      Código: <code>{state.deviceAuth.userCode}</code>
+                    </p>
+                    <button
+                      onClick={() =>
+                        void window.api.copy(state.deviceAuth.userCode!)
+                      }
+                    >
+                      Copiar código
+                    </button>
+                  </>
+                )}
+                {state.deviceAuth.verificationUri && (
+                  <button onClick={() => void window.api.openTwitchDevice()}>
+                    Abrir Twitch para autorizar
+                  </button>
+                )}{" "}
+                {state.deviceAuth.expiresAt && (
+                  <p>
+                    Caduca:{" "}
+                    {new Date(state.deviceAuth.expiresAt).toLocaleTimeString()}
+                  </p>
+                )}{" "}
+                {state.deviceAuth.detail && (
+                  <p className="error">{state.deviceAuth.detail}</p>
+                )}
+                <button
+                  className="danger"
+                  onClick={() => void window.api.cancelTwitchConnect()}
+                >
+                  Cancelar conexión
+                </button>
+              </div>
+            )}
         </article>
         <article>
           <h3>Kick</h3>
@@ -456,52 +518,291 @@ function Check({
   );
 }
 function Settings({ state }: { state: AppState }) {
-  const settings = state.settings;
-  const save = (value: Partial<AppState["settings"]>) =>
-    void window.api.saveSettings(value);
+  const categories = SETTINGS_CATEGORIES;
+  const [category, setCategory] =
+    useState<(typeof categories)[number]>("General");
+  const [draft, setDraft] = useState(state.settings);
+  const [saved, setSaved] = useState(state.settings);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const errors = validateSettings(draft);
+  const update = <K extends keyof typeof draft>(
+    key: K,
+    value: (typeof draft)[K],
+  ) => setDraft({ ...draft, [key]: value });
+  async function save() {
+    if (errors.length) return;
+    await window.api.saveSettings(draft);
+    setSaved(draft);
+  }
+  function changeCategory(next: (typeof categories)[number]) {
+    if (dirty && !confirm("Hay cambios sin guardar. ¿Cambiar de sección?"))
+      return;
+    setCategory(next);
+  }
   return (
-    <section>
+    <section className="settings-page">
       <h2>Ajustes</h2>
-      <div className="form settings">
-        <label>
-          Intervalo del monitor
-          <input
-            type="number"
-            min="5"
-            value={settings.scanMinutes}
-            onChange={(event) =>
-              save({ scanMinutes: Math.max(5, +event.target.value) })
-            }
-          />
-        </label>
-        <label>
-          Navegador
-          <select
-            value={settings.browserMode}
-            onChange={(event) =>
-              save({ browserMode: event.target.value as "default" | "managed" })
-            }
+      <nav className="settings-tabs" aria-label="Categorías de ajustes">
+        {categories.map((item) => (
+          <button
+            key={item}
+            className={category === item ? "active" : ""}
+            onClick={() => changeCategory(item)}
           >
-            <option value="default">Predeterminado</option>
-            <option value="managed">Gestionado (silenciado)</option>
-          </select>
-        </label>
-        {(
-          [
-            "startup",
-            "startMinimized",
-            "minimizeToTray",
-            "notifications",
-            "closeManagedTabs",
-          ] as const
-        ).map((key) => (
-          <Check
-            key={key}
-            label={key}
-            checked={settings[key]}
-            set={(value) => save({ [key]: value })}
-          />
+            {item}
+          </button>
         ))}
+      </nav>
+      {dirty && <p className="warning">Cambios sin guardar</p>}
+      {errors.map((error) => (
+        <p className="error" key={error}>
+          {error}
+        </p>
+      ))}
+      <article className="settings-card">
+        {category === "General" && (
+          <div className="settings-grid">
+            <label>
+              Tema
+              <select
+                value={draft.theme}
+                onChange={(e) =>
+                  update("theme", e.target.value as typeof draft.theme)
+                }
+              >
+                <option value="system">Sistema</option>
+                <option value="light">Claro</option>
+                <option value="dark">Oscuro</option>
+              </select>
+            </label>
+            <label>
+              Idioma
+              <select value={draft.language} disabled>
+                <option value="es">Español</option>
+              </select>
+            </label>
+            <Check
+              label="Iniciar con Windows"
+              checked={draft.startup}
+              set={(v) => update("startup", v)}
+            />
+            <Check
+              label="Iniciar minimizada"
+              checked={draft.startMinimized}
+              set={(v) => update("startMinimized", v)}
+            />
+            <Check
+              label="Minimizar a la bandeja"
+              checked={draft.minimizeToTray}
+              set={(v) => update("minimizeToTray", v)}
+            />
+          </div>
+        )}
+        {category === "Monitor" && (
+          <div className="settings-grid">
+            <label>
+              Intervalo de barrido
+              <input
+                type="number"
+                min="5"
+                value={draft.scanMinutes}
+                onChange={(e) => update("scanMinutes", +e.target.value)}
+              />
+              <small>Mínimo 5 minutos.</small>
+            </label>
+            <label>
+              Minutos de inactividad
+              <input
+                type="number"
+                min="0"
+                value={draft.idleMinutes}
+                onChange={(e) => update("idleMinutes", +e.target.value)}
+              />
+            </label>
+            <label>
+              Cuenta atrás (segundos)
+              <input
+                type="number"
+                min="5"
+                value={draft.countdownSeconds}
+                onChange={(e) => update("countdownSeconds", +e.target.value)}
+              />
+            </label>
+            <Check
+              label="Encendido automático por inactividad"
+              checked={draft.autoStart}
+              set={(v) => update("autoStart", v)}
+            />
+            <Check
+              label="Permitir que el encendido automático reactive el monitor después de apagarlo manualmente"
+              checked={draft.allowAutoReactivateAfterManualStop}
+              set={(v) => update("allowAutoReactivateAfterManualStop", v)}
+            />
+            <p>
+              Último barrido: {state.monitor.lastScan ?? "—"}
+              <br />
+              Próximo: {state.monitor.nextScan ?? "—"}
+            </p>
+            <div className="actions">
+              <button onClick={() => void window.api.start()}>Encender</button>
+              <button className="danger" onClick={() => void window.api.stop()}>
+                Apagar
+              </button>
+              {state.monitor.status === "stopping" && (
+                <button
+                  className="danger"
+                  onClick={() => void window.api.forceStop()}
+                >
+                  Forzar detención
+                </button>
+              )}
+              <button onClick={() => void window.api.scan()}>
+                Barrido ahora
+              </button>
+            </div>
+          </div>
+        )}
+        {category === "Navegador" && (
+          <div className="settings-grid">
+            <label>
+              Modo
+              <select
+                value={draft.browserMode}
+                onChange={(e) =>
+                  update(
+                    "browserMode",
+                    e.target.value as typeof draft.browserMode,
+                  )
+                }
+              >
+                <option value="default">Navegador predeterminado</option>
+                <option value="managed">Gestionado y silenciado</option>
+              </select>
+              <small>
+                El navegador externo no puede silenciarse ni cerrarse desde la
+                aplicación.
+              </small>
+            </label>
+            <Check
+              label="Cerrar ventanas gestionadas al terminar"
+              checked={draft.closeManagedTabs}
+              set={(v) => update("closeManagedTabs", v)}
+            />
+            <p>
+              Las ventanas gestionadas se silencian antes y después de navegar,
+              se reutilizan y enfocan sin duplicados.
+            </p>
+          </div>
+        )}
+        {category === "Twitch" && (
+          <Platforms
+            state={{ ...state, settings: draft }}
+            onClientId={(value) =>
+              setDraft({
+                ...draft,
+                platforms: {
+                  ...draft.platforms,
+                  twitch: { ...draft.platforms.twitch, clientId: value },
+                },
+              })
+            }
+          />
+        )}
+        {category === "Mensajes" && (
+          <p>
+            La mensajería se configura por canal en Streamers: desactivada por
+            defecto, intervalo mínimo 15 minutos, máximo 5 por directo y pausa
+            tras tres errores.
+          </p>
+        )}
+        {category === "Notificaciones" && (
+          <Check
+            label="Activar notificaciones de directos, monitor, OAuth y mensajes"
+            checked={draft.notifications}
+            set={(v) => update("notifications", v)}
+          />
+        )}
+        {category === "Datos y privacidad" && (
+          <div>
+            <p>Los tokens se cifran con safeStorage y nunca se exportan.</p>
+            <div className="actions">
+              <button onClick={() => void window.api.exportData()}>
+                Exportar configuración
+              </button>
+              <button onClick={() => void window.api.importData()}>
+                Importar configuración
+              </button>
+              <button onClick={() => void window.api.disconnectBot()}>
+                Cerrar sesión de Twitch
+              </button>
+              <button
+                className="danger"
+                onClick={() =>
+                  confirm("¿Limpiar historial?") &&
+                  void window.api.clearActivity()
+                }
+              >
+                Limpiar historial
+              </button>
+            </div>
+          </div>
+        )}
+        {category === "Diagnóstico" && (
+          <div>
+            <pre>
+              {JSON.stringify(
+                {
+                  version: "1.0.5",
+                  platform: navigator.platform,
+                  monitor: MONITOR_LABELS[state.monitor.status],
+                  platforms: draft.platforms,
+                  streamers: state.streamers.length,
+                  oauth: state.bot.status,
+                  scopes: state.bot.scopes ?? [],
+                  browser: draft.browserMode,
+                  timers: {
+                    scan: Boolean(state.monitor.nextScan),
+                    device: state.deviceAuth.status,
+                  },
+                },
+                null,
+                2,
+              )}
+            </pre>
+            <button
+              onClick={() =>
+                void window.api.copy(
+                  JSON.stringify(
+                    {
+                      version: "1.0.5",
+                      monitor: state.monitor.status,
+                      oauth: state.bot.status,
+                      scopes: state.bot.scopes ?? [],
+                      streamers: state.streamers.length,
+                      browser: draft.browserMode,
+                    },
+                    null,
+                    2,
+                  ),
+                )
+              }
+            >
+              Copiar diagnóstico
+            </button>
+          </div>
+        )}
+      </article>
+      <div className="settings-save">
+        <button onClick={() => setDraft(saved)} disabled={!dirty}>
+          Descartar cambios
+        </button>
+        <button
+          className="primary"
+          onClick={() => void save()}
+          disabled={!dirty || errors.length > 0}
+        >
+          Guardar cambios
+        </button>
       </div>
     </section>
   );

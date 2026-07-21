@@ -49,6 +49,8 @@ let win: BrowserWindow | null = null,
   tray: Tray | null = null,
   timer: NodeJS.Timeout | null = null,
   quitting = false;
+let monitorGeneration = 0;
+let scanController: AbortController | null = null;
 const managed = new Map<string, BrowserWindow>();
 const lock = new ScanLock();
 const auth = new TwitchAuth(() =>
@@ -56,8 +58,20 @@ const auth = new TwitchAuth(() =>
 );
 function migrate() {
   const raw = store.store as AppState;
-  store.set("schemaVersion", 3);
+  store.set("schemaVersion", 4);
+  store.set("settings", {
+    ...defaults.settings,
+    ...raw.settings,
+    platforms: { ...defaults.settings.platforms, ...raw.settings?.platforms },
+  });
   store.set("bot", migrateConnectionFrom102(raw.bot));
+  store.set("deviceAuth", raw.deviceAuth ?? { status: "idle" });
+  store.set("monitor", {
+    ...raw.monitor,
+    status: "off",
+    nextScan: undefined,
+    manuallyStopped: raw.monitor?.manuallyStopped ?? false,
+  });
   store.set(
     "streamers",
     (raw.streamers ?? []).map((s) => ({
@@ -158,7 +172,16 @@ function botStatus(error: unknown): BotStatus {
           : "disconnected"
     : "disconnected";
 }
-async function automate(s: Streamer) {
+function monitorCurrent(generation: number) {
+  return (
+    generation === monitorGeneration &&
+    store.get("monitor.status") !== "off" &&
+    store.get("monitor.status") !== "stopping" &&
+    !scanController?.signal.aborted
+  );
+}
+async function automate(s: Streamer, generation: number) {
+  if (!monitorCurrent(generation)) return;
   const decision = decideAutomation(s, Date.now());
   s.automationRuntime = decision.runtime;
   if (decision.reason === "unauthorized" && s.automation.enabled)
@@ -168,7 +191,9 @@ async function automate(s: Streamer) {
   try {
     const broadcasterId =
       s.externalId ?? (await auth.resolveBroadcaster(s.normalizedName));
+    if (!monitorCurrent(generation)) return;
     await auth.send(broadcasterId, sanitizeMessage(s.automation.message));
+    if (!monitorCurrent(generation)) return;
     s.externalId = broadcasterId;
     s.automationRuntime = recordSuccess(
       s.automationRuntime,
@@ -202,8 +227,10 @@ async function automate(s: Streamer) {
     }
   }
 }
-async function scan() {
+async function scan(generation = monitorGeneration) {
+  if (!monitorCurrent(generation)) return null;
   return lock.run(async () => {
+    if (!monitorCurrent(generation)) return null;
     store.set("monitor.status", "checking");
     emit();
     let partial = false;
@@ -229,6 +256,7 @@ async function scan() {
           ),
           accessToken,
         });
+        if (!monitorCurrent(generation)) return null;
         const change = transition(previous, result);
         const current = {
           ...previous,
@@ -248,7 +276,8 @@ async function scan() {
           const tab = managed.get(current.id);
           if (tab && store.get("settings.closeManagedTabs")) tab.close();
         }
-        await automate(current);
+        await automate(current, generation);
+        if (!monitorCurrent(generation)) return null;
         items[i] = current;
       } catch (error) {
         partial = true;
@@ -261,6 +290,7 @@ async function scan() {
         log(items[i].lastError!, "error", previous);
       }
     }
+    if (!monitorCurrent(generation)) return null;
     store.set("streamers", items);
     const now = Date.now();
     store.set("monitor", {
@@ -272,30 +302,67 @@ async function scan() {
       errors: items
         .flatMap((x) => (x.lastError ? [x.lastError] : []))
         .slice(0, 5),
+      manuallyStopped: false,
     });
     emit();
+    updateTray();
     return true;
   });
 }
-function schedule() {
+function schedule(generation: number) {
   if (timer) clearInterval(timer);
   timer = setInterval(
-    () => void scan(),
+    () => void scan(generation),
     Math.max(5, store.get("settings.scanMinutes")) * 60000,
   );
 }
 function start() {
-  schedule();
+  monitorGeneration++;
+  scanController?.abort();
+  scanController = new AbortController();
+  const generation = monitorGeneration;
+  schedule(generation);
   store.set("monitor.status", "starting");
+  store.set("monitor.manuallyStopped", false);
+  store.set("monitor.toast", "Monitor encendido");
   emit();
-  void scan();
+  updateTray();
+  void scan(generation);
 }
-function stop() {
+async function stop(manual = true, forced = false) {
+  store.set("monitor.status", "stopping");
+  store.set("monitor.toast", forced ? "Detención forzada" : "Monitor apagado");
+  emit();
+  monitorGeneration++;
+  scanController?.abort();
+  scanController = null;
   if (timer) clearInterval(timer);
   timer = null;
-  store.set("monitor.status", "off");
   store.set("monitor.nextScan", undefined);
+  store.set(
+    "streamers",
+    store
+      .get("streamers")
+      .map((item) => ({
+        ...item,
+        automationRuntime: { ...item.automationRuntime, paused: true },
+      })),
+  );
+  if (forced && store.get("settings.closeManagedTabs"))
+    for (const window of managed.values())
+      if (!window.isDestroyed()) window.close();
+  log(
+    forced
+      ? "Monitor detenido de forma forzada"
+      : manual
+        ? "Monitor apagado manualmente"
+        : "Monitor apagado",
+  );
+  await Promise.resolve();
+  store.set("monitor.status", "off");
+  store.set("monitor.manuallyStopped", manual);
   emit();
+  updateTray();
 }
 function assertSender(event: Electron.IpcMainInvokeEvent) {
   if (!win || event.sender !== win.webContents)
@@ -310,17 +377,62 @@ function register() {
   handle("state:get", () => state());
   handle("monitor:start", () => start());
   handle("monitor:stop", () => stop());
+  handle("monitor:force-stop", () => stop(true, true));
   handle("monitor:scan", () => scan());
   handle("bot:connect", async (value) => {
     if (value !== "personal" && value !== "bot")
       throw new Error("Tipo de cuenta no válido.");
     try {
-      const bot = await auth.connect(value as TwitchAccountType);
-      store.set("bot", bot);
+      store.set("deviceAuth", {
+        status: "requesting",
+        accountType: value as TwitchAccountType,
+      });
       emit();
+      const device = await auth.beginDevice(value as TwitchAccountType);
+      store.set("deviceAuth", device);
+      emit();
+      if (device.verificationUri)
+        await auth.openDeviceVerification(device.verificationUri);
+      void auth
+        .pollDevice((status) => {
+          store.set("deviceAuth", { ...store.get("deviceAuth"), ...status });
+          emit();
+        })
+        .then((bot) => {
+          store.set("bot", bot);
+          store.set("deviceAuth", {
+            status: "success",
+            accountType: bot.accountType,
+          });
+          emit();
+          new Notification({
+            title: "Cuenta de Twitch conectada",
+            body: bot.displayName ?? "Autorización completada.",
+          }).show();
+        })
+        .catch((error) => {
+          const cancelled =
+            error instanceof DOMException && error.name === "AbortError";
+          store.set("deviceAuth", {
+            status: cancelled
+              ? "cancelled"
+              : /caducado/i.test(String(error))
+                ? "expired"
+                : /denegado/i.test(String(error))
+                  ? "denied"
+                  : "error",
+            accountType: value as TwitchAccountType,
+            detail: cancelled
+              ? "Conexión cancelada."
+              : error instanceof Error
+                ? error.message
+                : "Error OAuth",
+          });
+          emit();
+        });
     } catch (error) {
-      store.set("bot", {
-        status: botStatus(error),
+      store.set("deviceAuth", {
+        status: "error",
         accountType: value as TwitchAccountType,
         detail: error instanceof Error ? error.message : "Error OAuth",
       });
@@ -328,16 +440,29 @@ function register() {
       throw error;
     }
   });
+  handle("bot:cancel-connect", () => {
+    auth.cancelDevice();
+    store.set("deviceAuth", { status: "cancelled" });
+    emit();
+  });
+  handle("bot:open-device", async () => {
+    const url = store.get("deviceAuth.verificationUri");
+    if (!url) throw new Error("No hay URL de autorización.");
+    await auth.openDeviceVerification(url);
+  });
   handle("bot:disconnect", () => {
     auth.clear();
     store.set("bot", { status: "disconnected" });
+    store.set("deviceAuth", { status: "idle" });
     emit();
   });
   handle("bot:switch-type", (value) => {
     if (value !== "personal" && value !== "bot")
       throw new Error("Tipo de cuenta no válido.");
     auth.clear();
+    monitorGeneration++;
     store.set("bot", { status: "disconnected", accountType: value });
+    store.set("deviceAuth", { status: "idle", accountType: value });
     emit();
   });
   handle("bot:check", async () => {
@@ -407,11 +532,13 @@ function register() {
       "scanMinutes",
       "idleMinutes",
       "autoStart",
+      "allowAutoReactivateAfterManualStop",
       "countdownSeconds",
       "startup",
       "startMinimized",
       "minimizeToTray",
       "notifications",
+      "language",
       "browserMode",
       "closeManagedTabs",
       "theme",
@@ -433,7 +560,7 @@ function register() {
         },
       };
     store.set("settings", { ...store.get("settings"), ...allowed });
-    schedule();
+    if (store.get("monitor.status") !== "off") schedule(monitorGeneration);
     emit();
   });
   handle("external:open", (value) => {
@@ -521,6 +648,11 @@ function createWindow() {
 function createTray() {
   tray = new Tray(nativeImage.createEmpty());
   tray.setToolTip("Apoya a tu Streamer");
+  updateTray();
+}
+function updateTray() {
+  if (!tray) return;
+  const status = store.get("monitor.status");
   tray.setContextMenu(
     Menu.buildFromTemplate([
       {
@@ -530,8 +662,16 @@ function createTray() {
           win?.focus();
         },
       },
-      { label: "Encender monitor", click: start },
-      { label: "Apagar monitor", click: stop },
+      {
+        label: status === "off" ? "✓ Monitor apagado" : `Monitor: ${status}`,
+        enabled: false,
+      },
+      { label: "Encender monitor", click: start, enabled: status === "off" },
+      {
+        label: "Apagar monitor",
+        click: () => void stop(),
+        enabled: status !== "off" && status !== "stopping",
+      },
       { type: "separator" },
       {
         label: "Salir completamente",
@@ -562,7 +702,8 @@ app.whenReady().then(async () => {
 });
 app.on("before-quit", () => {
   quitting = true;
-  stop();
+  auth.cancelDevice();
+  void stop(false, true);
   for (const window of managed.values())
     if (!window.isDestroyed()) window.close();
 });

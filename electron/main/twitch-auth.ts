@@ -1,13 +1,18 @@
 import { safeStorage, shell } from "electron";
 import Store from "electron-store";
-import { createHash, randomBytes } from "node:crypto";
-import { startOAuthCallback, TWITCH_REDIRECT_URI } from "./oauth-callback";
 import {
   assertAuthenticatedSender,
   scopesForAccount,
 } from "../../src/domain/twitch-account";
-import type { BotConnection, TwitchAccountType } from "../../src/domain/types";
+import type {
+  BotConnection,
+  DeviceAuthPublic,
+  TwitchAccountType,
+} from "../../src/domain/types";
 
+export const TWITCH_DEVICE_ENDPOINT = "https://id.twitch.tv/oauth2/device";
+export const TWITCH_TOKEN_ENDPOINT = "https://id.twitch.tv/oauth2/token";
+export const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 export type StoredTokens = {
   accessToken: string;
   refreshToken: string;
@@ -16,6 +21,13 @@ export type StoredTokens = {
   accountType?: TwitchAccountType;
 };
 type Secrets = { tokens?: string };
+type PendingDevice = {
+  deviceCode: string;
+  accountType: TwitchAccountType;
+  expiresAt: number;
+  intervalMs: number;
+  controller: AbortController;
+};
 export class TwitchApiError extends Error {
   constructor(
     public status: number,
@@ -25,7 +37,6 @@ export class TwitchApiError extends Error {
     super(message);
   }
 }
-
 export function migrateStoredTokens(
   tokens: StoredTokens,
 ): StoredTokens & { accountType: TwitchAccountType } {
@@ -61,41 +72,38 @@ export function refreshedTokens(
     accountType: previous.accountType,
   };
 }
-export function buildAuthorizeUrl(
-  clientId: string,
-  accountType: TwitchAccountType,
-  state: string,
-  challenge: string,
-) {
-  const url = new URL("https://id.twitch.tv/oauth2/authorize");
-  url.search = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: TWITCH_REDIRECT_URI,
-    response_type: "code",
-    scope: scopesForAccount(accountType).join(" "),
-    state,
-    code_challenge: challenge,
-    code_challenge_method: "S256",
-    force_verify: "true",
-  }).toString();
-  return url;
-}
-export function buildTokenRequestBody(
-  clientId: string,
-  code: string,
-  verifier: string,
-) {
+export function deviceRequestBody(clientId: string, type: TwitchAccountType) {
   return new URLSearchParams({
     client_id: clientId,
-    code,
-    grant_type: "authorization_code",
-    redirect_uri: TWITCH_REDIRECT_URI,
-    code_verifier: verifier,
+    scopes: scopesForAccount(type).join(" "),
   });
 }
+export function deviceTokenBody(clientId: string, deviceCode: string) {
+  return new URLSearchParams({
+    client_id: clientId,
+    device_code: deviceCode,
+    grant_type: DEVICE_GRANT_TYPE,
+  });
+}
+export function nextPollingInterval(currentMs: number, error: string) {
+  return error === "slow_down" ? currentMs + 5_000 : currentMs;
+}
+const wait = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException("Cancelado", "AbortError"));
+      },
+      { once: true },
+    );
+  });
 
 export class TwitchAuth {
   private secrets = new Store<Secrets>({ name: "secure-tokens" });
+  private pending?: PendingDevice;
   constructor(private clientId: () => string | undefined) {}
   private save(tokens: StoredTokens) {
     if (!safeStorage.isEncryptionAvailable())
@@ -108,6 +116,7 @@ export class TwitchAuth {
     );
   }
   clear() {
+    this.cancelDevice();
     deleteStoredTokens(this.secrets);
   }
   hasTokens() {
@@ -127,64 +136,148 @@ export class TwitchAuth {
       return undefined;
     }
   }
-  currentType(): TwitchAccountType | undefined {
+  currentType() {
     return this.read()?.accountType;
   }
-  async connect(accountType: TwitchAccountType) {
+  async beginDevice(accountType: TwitchAccountType): Promise<DeviceAuthPublic> {
+    this.cancelDevice();
     const clientId = this.clientId()?.trim();
-    if (!clientId) throw new Error("Configura primero el Client ID de Twitch.");
+    if (!clientId) throw new Error("Client ID vacío.");
     if (
       this.hasTokens() &&
       shouldClearTokensOnTypeChange(this.currentType(), accountType)
     )
       this.clear();
-    const verifier = randomBytes(48).toString("base64url");
-    const challenge = createHash("sha256").update(verifier).digest("base64url");
-    const state = randomBytes(24).toString("hex");
-    const callback = await startOAuthCallback(state);
-    let code: string;
-    try {
-      await shell.openExternal(
-        buildAuthorizeUrl(clientId, accountType, state, challenge).toString(),
-      );
-      console.info("[twitch-oauth] navegador abierto", {
-        redirectUri: TWITCH_REDIRECT_URI,
-      });
-      code = await callback.waitForCode;
-    } finally {
-      await callback.close("finalización del flujo");
-    }
-    const response = await fetch("https://id.twitch.tv/oauth2/token", {
+    const controller = new AbortController();
+    const response = await fetch(TWITCH_DEVICE_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: buildTokenRequestBody(clientId, code, verifier),
+      body: deviceRequestBody(clientId, accountType),
+      signal: controller.signal,
     });
     if (!response.ok)
       throw await this.responseError(
         response,
-        "Twitch rechazó el intercambio OAuth.",
+        "Twitch no pudo iniciar la autorización del dispositivo.",
       );
-    const json = (await response.json()) as {
-      access_token: string;
-      refresh_token: string;
+    const data = (await response.json()) as {
+      device_code: string;
+      user_code: string;
+      verification_uri: string;
       expires_in: number;
-      scope: string[];
+      interval: number;
     };
-    this.save({
-      accessToken: json.access_token,
-      refreshToken: json.refresh_token,
-      expiresAt: new Date(Date.now() + json.expires_in * 1000).toISOString(),
-      scopes: json.scope,
+    const expiresAt = Date.now() + data.expires_in * 1000;
+    this.pending = {
+      deviceCode: data.device_code,
       accountType,
-    });
-    return this.validate();
+      expiresAt,
+      intervalMs: Math.max(1, data.interval) * 1000,
+      controller,
+    };
+    return {
+      status: "waiting",
+      accountType,
+      userCode: data.user_code,
+      verificationUri: data.verification_uri,
+      expiresAt: new Date(expiresAt).toISOString(),
+      intervalSeconds: Math.max(1, data.interval),
+    };
+  }
+  async openDeviceVerification(url: string) {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !parsed.hostname.endsWith("twitch.tv"))
+      throw new Error("URL de Twitch no válida.");
+    await shell.openExternal(parsed.toString());
+  }
+  async pollDevice(
+    onStatus: (status: DeviceAuthPublic) => void,
+  ): Promise<BotConnection> {
+    const pending = this.pending;
+    const clientId = this.clientId()?.trim();
+    if (!pending || !clientId)
+      throw new Error("No hay una conexión pendiente.");
+    try {
+      while (Date.now() < pending.expiresAt) {
+        await wait(pending.intervalMs, pending.controller.signal);
+        const response = await fetch(TWITCH_TOKEN_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: deviceTokenBody(clientId, pending.deviceCode),
+          signal: pending.controller.signal,
+        });
+        const data = (await response.json()) as {
+          access_token?: string;
+          refresh_token?: string;
+          expires_in?: number;
+          scope?: string[];
+          message?: string;
+          error?: string;
+        };
+        if (
+          response.ok &&
+          data.access_token &&
+          data.refresh_token &&
+          data.expires_in
+        ) {
+          this.save({
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token,
+            expiresAt: new Date(
+              Date.now() + data.expires_in * 1000,
+            ).toISOString(),
+            scopes: data.scope ?? [],
+            accountType: pending.accountType,
+          });
+          this.pending = undefined;
+          return await this.validate();
+        }
+        const code = data.error ?? data.message ?? "authorization_pending";
+        if (/pending/i.test(code)) {
+          onStatus({
+            status: "waiting",
+            accountType: pending.accountType,
+            expiresAt: new Date(pending.expiresAt).toISOString(),
+          });
+          continue;
+        }
+        if (/slow_down/i.test(code)) {
+          pending.intervalMs = nextPollingInterval(
+            pending.intervalMs,
+            "slow_down",
+          );
+          onStatus({
+            status: "slow-down",
+            accountType: pending.accountType,
+            expiresAt: new Date(pending.expiresAt).toISOString(),
+            intervalSeconds: pending.intervalMs / 1000,
+          });
+          continue;
+        }
+        if (/denied|declined|access_denied/i.test(code))
+          throw new Error("Acceso denegado por el usuario.");
+        if (/expired/i.test(code))
+          throw new Error("El código de Twitch ha caducado.");
+        throw new Error(data.message ?? "Twitch rechazó la autorización.");
+      }
+      throw new Error("El código de Twitch ha caducado.");
+    } finally {
+      if (this.pending === pending) {
+        pending.controller.abort();
+        this.pending = undefined;
+      }
+    }
+  }
+  cancelDevice() {
+    this.pending?.controller.abort();
+    this.pending = undefined;
   }
   private async refresh(
     tokens: StoredTokens & { accountType: TwitchAccountType },
   ) {
     const clientId = this.clientId();
     if (!clientId) throw new TwitchApiError(401, "Falta Client ID.");
-    const response = await fetch("https://id.twitch.tv/oauth2/token", {
+    const response = await fetch(TWITCH_TOKEN_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -243,8 +336,9 @@ export class TwitchAuth {
       expires_in: number;
       scopes: string[];
     };
-    const required = scopesForAccount(tokens.accountType);
-    const missing = required.filter((scope) => !data.scopes.includes(scope));
+    const missing = scopesForAccount(tokens.accountType).filter(
+      (scope) => !data.scopes.includes(scope),
+    );
     if (missing.length)
       throw new TwitchApiError(
         403,
@@ -339,7 +433,7 @@ export class TwitchAuth {
       const body = (await response.clone().json()) as { message?: string };
       if (body.message) message = body.message;
     } catch {
-      /* respuesta sin JSON */
+      /* sin JSON */
     }
     return new TwitchApiError(
       response.status,

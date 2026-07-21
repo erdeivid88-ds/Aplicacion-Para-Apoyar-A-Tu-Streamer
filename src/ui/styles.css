@@ -10,6 +10,7 @@
 }
 body {
   margin: 0;
+  overflow-x: hidden;
 }
 .avatar {
   width: 72px;
@@ -66,6 +67,76 @@ main {
   max-width: 1400px;
   width: 100%;
   margin: auto;
+}
+.settings-page {
+  max-width: 1100px;
+  margin: auto;
+}
+.settings-tabs {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.25rem 0 1rem;
+  position: sticky;
+  top: 0;
+  background: #0d0a13;
+  z-index: 1;
+}
+.settings-tabs button {
+  white-space: nowrap;
+  min-height: 42px;
+}
+.settings-card {
+  min-height: 260px;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+.settings-grid label {
+  min-width: 0;
+}
+.settings-save {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: #0d0a13;
+  border-top: 1px solid #30283a;
+}
+.device-flow {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #7544c5;
+  border-radius: 12px;
+}
+.device-flow code {
+  font-size: 1.4rem;
+  letter-spacing: 0.12em;
+}
+pre {
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 5;
+  padding: 0.85rem 1rem;
+  border: 1px solid #ae78ff;
+  border-radius: 10px;
+  background: #2f2350;
 }
 header {
   text-align: right;

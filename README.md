@@ -6,19 +6,11 @@ No simula actividad humana, envía spam, automatiza el DOM, manipula cookies ni 
 
 ## Cuentas y mensajería Twitch
 
-La integración usa exclusivamente OAuth oficial (Authorization Code con PKCE), validación y renovación automática, resolución de `broadcaster_id`/`sender_id` y el endpoint Helix de chat. Hay dos modos excluyentes por perfil local: **Personal**, con únicamente `user:write:chat`, y **Bot**, con `user:write:chat` y `user:bot`. La cuenta personal escribe con su identidad real; la cuenta bot usa una identidad separada. Cambiar de modo elimina primero los tokens cifrados anteriores.
+La integración usa exclusivamente el Device Code Flow oficial para aplicaciones públicas, validación y renovación automática, resolución de `broadcaster_id`/`sender_id` y el endpoint Helix de chat. No usa servidor local, PKCE ni secretos. Hay dos modos excluyentes por perfil local: **Personal**, con únicamente `user:write:chat`, y **Bot**, con `user:write:chat` y `user:bot`.
 
-### Configurar la URL de redirección
+### Configurar Twitch
 
-Entra en **Twitch Developer Console → Applications → Manage → OAuth Redirect URLs** y añade exactamente:
-
-```text
-http://localhost:3000/oauth/twitch
-```
-
-Después pulsa `Add` y guarda los cambios. `http://localhost:3000` sin `/oauth/twitch` no sirve. Tampoco debe añadirse una barra final: la URL registrada debe coincidir exactamente con `http://localhost:3000/oauth/twitch`.
-
-Durante el inicio de sesión la aplicación abre un listener dual-stack en el puerto `3000`, accesible por `localhost` tanto mediante IPv4 (`127.0.0.1`) como IPv6 (`::1`). La `redirect_uri` enviada a Twitch sigue siendo exactamente la URL anterior con `localhost`, tanto al autorizar como al intercambiar el código. Antes de abrir el navegador se resuelve y verifica localmente `localhost`. Si el puerto está ocupado, cierra la aplicación que lo esté utilizando y vuelve a intentarlo.
+En Twitch Developer Console crea o administra una aplicación, selecciona el tipo de cliente **Público**, copia el Client ID y pégalo en Ajustes → Twitch. No se necesita ni debe configurarse un Client Secret. Al conectar, la aplicación muestra el código de dispositivo y abre la página oficial de Twitch para autorizarlo.
 
 Los tokens se cifran con `safeStorage` en el proceso principal. Nunca llegan al renderer, registros ni exportaciones. Cada canal configura mensaje, envío inicial, repetición, intervalo (mínimo 15 minutos) y máximo por directo (hasta 5). El estado del directo y los envíos se persisten para evitar duplicados después de reiniciar. La automatización se detiene al terminar el directo y se pausa tras tres fallos consecutivos.
 

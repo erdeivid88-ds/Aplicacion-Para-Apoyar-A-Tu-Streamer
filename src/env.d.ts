@@ -11,9 +11,12 @@ declare global {
       onState: (callback: (state: AppState) => void) => () => void;
       start: () => Promise<void>;
       stop: () => Promise<void>;
+      forceStop: () => Promise<void>;
       scan: () => Promise<void>;
       connectTwitch: (type: TwitchAccountType) => Promise<void>;
       disconnectBot: () => Promise<void>;
+      cancelTwitchConnect: () => Promise<void>;
+      openTwitchDevice: () => Promise<void>;
       switchTwitchType: (type: TwitchAccountType) => Promise<void>;
       checkTwitchPermissions: () => Promise<void>;
       saveStreamer: (value: Partial<Streamer>) => Promise<void>;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.5 (Device Flow y monitor)
+
+- Sustituye por completo callback/PKCE por Device Code Flow para cliente público sin secretos.
+- Invalida barridos tardíos y cancela planificadores al apagar manualmente.
+- Rediseña Ajustes con ocho categorías, borrador, validación y guardado explícito.
+
 ## 1.0.5
 
 - Hace el callback OAuth accesible por `localhost` mediante IPv4 e IPv6.

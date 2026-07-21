@@ -1,7 +1,14 @@
 export type Platform = "twitch" | "kick";
 export type TwitchAccountType = "personal" | "bot";
 export type MonitorStatus =
-  "off" | "starting" | "checking" | "active" | "paused" | "partial-error";
+  | "off"
+  | "starting"
+  | "checking"
+  | "active"
+  | "paused"
+  | "partial-error"
+  | "stopping"
+  | "error";
 export type BotStatus =
   | "connected"
   | "disconnected"
@@ -54,16 +61,36 @@ export interface Settings {
   scanMinutes: number;
   idleMinutes: number;
   autoStart: boolean;
+  allowAutoReactivateAfterManualStop: boolean;
   countdownSeconds: number;
   startup: boolean;
   startMinimized: boolean;
   minimizeToTray: boolean;
   notifications: boolean;
+  language: "es";
   browserMode: "default" | "managed";
   closeManagedTabs: boolean;
   theme: "light" | "dark" | "system";
   showStartNotice: boolean;
   platforms: Record<Platform, { enabled: boolean; clientId?: string }>;
+}
+export interface DeviceAuthPublic {
+  status:
+    | "idle"
+    | "requesting"
+    | "waiting"
+    | "slow-down"
+    | "success"
+    | "denied"
+    | "expired"
+    | "cancelled"
+    | "error";
+  accountType?: TwitchAccountType;
+  userCode?: string;
+  verificationUri?: string;
+  expiresAt?: string;
+  intervalSeconds?: number;
+  detail?: string;
 }
 export interface Activity {
   id: string;
@@ -89,11 +116,14 @@ export interface AppState {
   streamers: Streamer[];
   activity: Activity[];
   bot: BotConnection;
+  deviceAuth: DeviceAuthPublic;
   monitor: {
     status: MonitorStatus;
     lastScan?: string;
     nextScan?: string;
     errors: string[];
+    manuallyStopped: boolean;
+    toast?: string;
   };
 }
 export const defaultAutomation = (): AutomationConfig => ({
@@ -112,16 +142,18 @@ export const defaultRuntime = (): AutomationRuntime => ({
   paused: false,
 });
 export const defaults: AppState = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   settings: {
     scanMinutes: 15,
     idleMinutes: 10,
     autoStart: true,
+    allowAutoReactivateAfterManualStop: false,
     countdownSeconds: 30,
     startup: false,
     startMinimized: false,
     minimizeToTray: true,
     notifications: true,
+    language: "es",
     browserMode: "default",
     closeManagedTabs: true,
     theme: "system",
@@ -131,5 +163,6 @@ export const defaults: AppState = {
   streamers: [],
   activity: [],
   bot: { status: "disconnected" },
-  monitor: { status: "off", errors: [] },
+  deviceAuth: { status: "idle" },
+  monitor: { status: "off", errors: [], manuallyStopped: false },
 };
