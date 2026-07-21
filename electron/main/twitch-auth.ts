@@ -1,7 +1,7 @@
 import { safeStorage, shell } from "electron";
 import Store from "electron-store";
 import { createHash, randomBytes } from "node:crypto";
-import { createServer } from "node:http";
+import { startOAuthCallback, TWITCH_REDIRECT_URI } from "./oauth-callback";
 import {
   assertAuthenticatedSender,
   scopesForAccount,
@@ -34,10 +34,64 @@ export function migrateStoredTokens(
 export function shouldRefresh(expiresAt: string, now = Date.now()) {
   return new Date(expiresAt).getTime() < now + 60_000;
 }
-export function shouldClearTokensOnTypeChange(current: TwitchAccountType | undefined, next: TwitchAccountType) { return Boolean(current && current !== next) }
-export function deleteStoredTokens(store: { delete(key: "tokens"): unknown }) { store.delete("tokens") }
-export function refreshedTokens(previous: StoredTokens & { accountType: TwitchAccountType }, response: { access_token: string; refresh_token?: string; expires_in: number; scope: string[] }, now = Date.now()) {
-  return { accessToken: response.access_token, refreshToken: response.refresh_token ?? previous.refreshToken, expiresAt: new Date(now + response.expires_in * 1000).toISOString(), scopes: response.scope, accountType: previous.accountType };
+export function shouldClearTokensOnTypeChange(
+  current: TwitchAccountType | undefined,
+  next: TwitchAccountType,
+) {
+  return Boolean(current && current !== next);
+}
+export function deleteStoredTokens(store: { delete(key: "tokens"): unknown }) {
+  store.delete("tokens");
+}
+export function refreshedTokens(
+  previous: StoredTokens & { accountType: TwitchAccountType },
+  response: {
+    access_token: string;
+    refresh_token?: string;
+    expires_in: number;
+    scope: string[];
+  },
+  now = Date.now(),
+) {
+  return {
+    accessToken: response.access_token,
+    refreshToken: response.refresh_token ?? previous.refreshToken,
+    expiresAt: new Date(now + response.expires_in * 1000).toISOString(),
+    scopes: response.scope,
+    accountType: previous.accountType,
+  };
+}
+export function buildAuthorizeUrl(
+  clientId: string,
+  accountType: TwitchAccountType,
+  state: string,
+  challenge: string,
+) {
+  const url = new URL("https://id.twitch.tv/oauth2/authorize");
+  url.search = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: TWITCH_REDIRECT_URI,
+    response_type: "code",
+    scope: scopesForAccount(accountType).join(" "),
+    state,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    force_verify: "true",
+  }).toString();
+  return url;
+}
+export function buildTokenRequestBody(
+  clientId: string,
+  code: string,
+  verifier: string,
+) {
+  return new URLSearchParams({
+    client_id: clientId,
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: TWITCH_REDIRECT_URI,
+    code_verifier: verifier,
+  });
 }
 
 export class TwitchAuth {
@@ -53,7 +107,9 @@ export class TwitchAuth {
       safeStorage.encryptString(JSON.stringify(tokens)).toString("base64"),
     );
   }
-  clear() { deleteStoredTokens(this.secrets) }
+  clear() {
+    deleteStoredTokens(this.secrets);
+  }
   hasTokens() {
     return Boolean(this.secrets.get("tokens"));
   }
@@ -77,70 +133,28 @@ export class TwitchAuth {
   async connect(accountType: TwitchAccountType) {
     const clientId = this.clientId()?.trim();
     if (!clientId) throw new Error("Configura primero el Client ID de Twitch.");
-    if (this.hasTokens() && shouldClearTokensOnTypeChange(this.currentType(), accountType)) this.clear();
+    if (
+      this.hasTokens() &&
+      shouldClearTokensOnTypeChange(this.currentType(), accountType)
+    )
+      this.clear();
     const verifier = randomBytes(48).toString("base64url");
     const challenge = createHash("sha256").update(verifier).digest("base64url");
     const state = randomBytes(24).toString("hex");
-    const server = createServer();
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => resolve());
-    });
-    const address = server.address();
-    if (!address || typeof address === "string")
-      throw new Error("No se pudo iniciar el callback OAuth.");
-    const redirect = `http://localhost:${address.port}/oauth/twitch`;
-    const code = await new Promise<string>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        server.close();
-        reject(new Error("La conexión OAuth agotó el tiempo."));
-      }, 180_000);
-      server.on("request", (req, res) => {
-        const url = new URL(req.url ?? "/", redirect);
-        if (url.pathname !== "/oauth/twitch") return;
-        if (url.searchParams.get("state") !== state) {
-          res.writeHead(400);
-          res.end("Estado OAuth no válido.");
-          return;
-        }
-        const value = url.searchParams.get("code");
-        res.writeHead(value ? 200 : 400, {
-          "Content-Type": "text/plain; charset=utf-8",
-        });
-        res.end(
-          value
-            ? "Cuenta de Twitch conectada. Ya puedes cerrar esta ventana."
-            : "No se autorizó la cuenta de Twitch.",
-        );
-        if (value) {
-          clearTimeout(timeout);
-          server.close();
-          resolve(value);
-        }
-      });
-      const url = new URL("https://id.twitch.tv/oauth2/authorize");
-      url.search = new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirect,
-        response_type: "code",
-        scope: scopesForAccount(accountType).join(" "),
-        state,
-        code_challenge: challenge,
-        code_challenge_method: "S256",
-        force_verify: "true",
-      }).toString();
-      void shell.openExternal(url.toString());
-    });
+    const callback = await startOAuthCallback(state);
+    let code: string;
+    try {
+      await shell.openExternal(
+        buildAuthorizeUrl(clientId, accountType, state, challenge).toString(),
+      );
+      code = await callback.waitForCode;
+    } finally {
+      await callback.close();
+    }
     const response = await fetch("https://id.twitch.tv/oauth2/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: clientId,
-        code,
-        grant_type: "authorization_code",
-        redirect_uri: redirect,
-        code_verifier: verifier,
-      }),
+      body: buildTokenRequestBody(clientId, code, verifier),
     });
     if (!response.ok)
       throw await this.responseError(

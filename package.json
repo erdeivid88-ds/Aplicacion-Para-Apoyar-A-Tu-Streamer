@@ -1,6 +1,6 @@
 {
   "name": "apoya-a-tu-streamer",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Monitor y lanzador legítimo de directos de Twitch y Kick",
   "main": "dist-electron/main/index.js",
   "author": "Vortex Studio",

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.4
+
+- Fija el callback OAuth de Twitch en `http://localhost:3000/oauth/twitch`.
+- Añade gestión segura de puerto ocupado, errores, cancelación y timeout.
+- Muestra una página HTML clara al finalizar OAuth y documenta la URL exacta de Twitch Developer Console.
+
 ## 1.0.3
 
 - Añade conexión OAuth de cuenta personal con `user:write:chat` sin scopes de bot.

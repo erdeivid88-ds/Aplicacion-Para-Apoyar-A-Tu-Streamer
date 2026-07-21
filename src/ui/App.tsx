@@ -5,6 +5,7 @@ import {
   type Platform,
   type Streamer,
 } from "../domain/types";
+import { TWITCH_REDIRECT_URI } from "../domain/twitch-oauth";
 const pages = [
   "Inicio",
   "Plataformas",
@@ -160,6 +161,15 @@ function Platforms({ state }: { state: AppState }) {
               }
             />
           </label>
+          <p>
+            URL de redirección que debes registrar en Twitch Developer Console:
+          </p>
+          <p>
+            <code>{TWITCH_REDIRECT_URI}</code>
+          </p>
+          <button onClick={() => void window.api.copy(TWITCH_REDIRECT_URI)}>
+            Copiar URL de redirección
+          </button>
           <p>
             <small>
               La cuenta personal enviará con su nombre real de Twitch. La cuenta
