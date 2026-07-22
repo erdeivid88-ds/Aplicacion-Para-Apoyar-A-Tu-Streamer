@@ -1,6 +1,28 @@
 # Apoya a tu Streamer
 
-Versión actual: **1.0.6**.
+Versión actual: **1.0.7**.
+
+## Modos de apertura
+
+- **Navegador predeterminado:** usa `shell.openExternal`; la aplicación no puede silenciar ni cerrar esa pestaña.
+- **Navegador predeterminado con extensión:** abre una pestaña real de Chrome o Edge, conserva su `tabId` y solo controla pestañas creadas por la integración.
+- **Navegador interno de la aplicación:** abre una `BrowserWindow` secundaria aislada, sin preload privilegiado, silenciada y separada de la ventana principal.
+
+La extensión no modifica ninguna pestaña cuando Apoya a tu Streamer está cerrada o desconectada. No recibe tokens, no consulta Twitch/Kick y no adopta pestañas manuales. Una sesión aleatoria solo en memoria, un handshake y heartbeats cada 10 segundos autorizan las órdenes; tras 30 segundos sin heartbeat o al desconectarse queda inerte y deja las pestañas como están.
+
+## Instalar la extensión y Native Messaging
+
+Ejecuta `npm run build:extension`. En Chrome abre `chrome://extensions`; en Edge, `edge://extensions`. Activa el modo desarrollador, elige **Cargar descomprimida/desempaquetada** y selecciona `browser-extension/dist`. El ID de desarrollo fijo es `jnpgebgidkgjmafnbpknialnjhkaigic`.
+
+El host se compila con `npm run build:native-host`. Los manifiestos separados están en `native-host/manifests`; registra por usuario (HKCU) con `native-host/scripts/register.ps1`, indicando navegador, manifiesto y ruta absoluta del host. `unregister.ps1` elimina únicamente la clave de esta aplicación. La edición portable nunca registra el host automáticamente.
+
+Permisos: `tabs`, `storage`, `nativeMessaging`, y acceso limitado a URLs de canal de Twitch y Kick. No se solicitan cookies, historial, `webRequest`, scripting ni `<all_urls>`.
+
+Si la extensión no responde, el fallback predeterminado abre el navegador normal; puede desactivarse en Ajustes. Chrome/Edge no permiten instalar silenciosamente una extensión normal: para producción deben configurarse las URLs de sus tiendas.
+
+### Diagnóstico
+
+Comprueba que la aplicación esté abierta, que el host figure en HKCU para el navegador usado, que el manifiesto contenga una ruta absoluta existente y el ID exacto. Nunca compartas tokens ni códigos OAuth en un diagnóstico.
 
 Aplicación Electron para Windows 10/11 x64 que monitoriza canales de Twitch y Kick, abre directos y permite mensajes funcionales mediante una cuenta bot claramente identificada. La mensajería está desactivada por defecto y solo funciona en canales cuya autorización se haya confirmado.
 
@@ -35,7 +57,15 @@ npm ci
 npm run lint
 npm run typecheck
 npm test
+npm run test:extension
+npm run test:native-host
+npm run build:extension
+npm run build:native-host
 npm run build:win
 ```
 
 Los instaladores se generan en `release/`. Las credenciales no deben incorporarse nunca a Git.
+
+## Prueba manual reproducible
+
+Instala la aplicación; carga la extensión en Chrome o Edge; abre la aplicación y verifica el estado conectado; enciende el monitor con un canal en directo y confirma apertura silenciada sin duplicados. Cierra manualmente la pestaña y verifica que no reaparece en esa sesión; apaga y enciende el monitor y confirma que puede abrir de nuevo. Simula el final y comprueba que solo se cierra la pestaña registrada. Cierra la aplicación, abre Twitch manualmente y confirma que no se silencia ni cierra. Repite con navegador interno y confirma que la ventana secundaria se silencia/cierra y la principal permanece abierta.

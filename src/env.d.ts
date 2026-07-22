@@ -13,6 +13,10 @@ declare global {
       stop: () => Promise<void>;
       forceStop: () => Promise<void>;
       scan: () => Promise<void>;
+      checkExtension: () => Promise<void>;
+      testExtension: () => Promise<void>;
+      muteExtensionTabs: () => Promise<void>;
+      closeExtensionTabs: () => Promise<void>;
       connectTwitch: (type: TwitchAccountType) => Promise<void>;
       disconnectBot: () => Promise<void>;
       cancelTwitchConnect: () => Promise<void>;

@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Apoya a tu Streamer",
+  "version": "1.0.7",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAorBGsaaHUlfQGpzvcPsrynQnknIAI+QJv0T45b0Cz3pQH6ygEBLQ4HdWjCpuehu1GYwbJWmRBVqCcjhe4R3XjoiALV34tVcQlY48mB9kZXTsn0Ubome3Kd34BSRIzdFbapH2r7ZUU57eHnfh5ttL0cwVG0mb/5ptoav3LnWjkBrre59TwtVQYymZN08O+0qur5QCFXdGU4r3PMj1ZvrjjZZrT9Dx8nAT6i4q00rIxwUOFR5ElAzVlPj2OJVnX0/shHCq2fZAnJNTbnsBH06MdlFdskPGCUx6k/jOVAR0DrzFbJbXhdxmr9YEPY3gCSkgmvmPfAJOHMY98TAKHdbY7wIDAQAB",
+  "description": "Controla exclusivamente pestañas abiertas por Apoya a tu Streamer.",
+  "permissions": ["tabs", "storage", "nativeMessaging"],
+  "host_permissions": ["https://www.twitch.tv/*", "https://twitch.tv/*", "https://kick.com/*", "https://www.kick.com/*"],
+  "background": { "service_worker": "service-worker.js" },
+  "action": { "default_popup": "popup.html" },
+  "options_page": "options.html",
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'" }
+}

@@ -1,0 +1,10 @@
+import net from "node:net";
+import { NativeMessageDecoder, encodeNativeMessage } from "./framing";
+const PIPE = "\\\\.\\pipe\\apoya-a-tu-streamer-native-v1";
+const input = new NativeMessageDecoder(); const relay = new NativeMessageDecoder();
+const socket=net.createConnection(PIPE);
+socket.on("connect",()=>process.stdin.resume());
+process.stdin.on("data",(chunk:Buffer)=>{try{for(const message of input.push(chunk))socket.write(encodeNativeMessage(message));}catch(error){console.error("[native-host] rejected input",error instanceof Error?error.message:"error");process.exitCode=1;socket.end();}});
+socket.on("data",(chunk:Buffer)=>{try{for(const message of relay.push(chunk))process.stdout.write(encodeNativeMessage(message));}catch(error){console.error("[native-host] rejected relay",error instanceof Error?error.message:"error");process.exitCode=1;socket.end();}});
+socket.on("error",()=>{console.error("[native-host] application unavailable");process.exitCode=1;});
+socket.on("close",()=>process.exit()); process.stdin.on("end",()=>socket.end());

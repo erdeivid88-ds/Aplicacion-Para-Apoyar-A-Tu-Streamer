@@ -68,8 +68,19 @@ export interface Settings {
   minimizeToTray: boolean;
   notifications: boolean;
   language: "es";
-  browserMode: "default" | "managed";
+  browserMode: "default" | "extension" | "managed";
   closeManagedTabs: boolean;
+  muteManagedStreams: boolean;
+  openStreamsInBackground: boolean;
+  focusStreamOnOpen: boolean;
+  closeExtensionTabsOnEnd: boolean;
+  closeExtensionTabsOnMonitorStop: boolean;
+  closeExtensionTabsOnAppClose: boolean;
+  closeInternalWindowsOnEnd: boolean;
+  closeInternalWindowsOnMonitorStop: boolean;
+  reopenOnNewMonitorSession: boolean;
+  extensionFallback: boolean;
+  notifyExtensionErrors: boolean;
   theme: "light" | "dark" | "system";
   showStartNotice: boolean;
   platforms: Record<Platform, { enabled: boolean; clientId?: string }>;
@@ -124,7 +135,21 @@ export interface AppState {
     errors: string[];
     manuallyStopped: boolean;
     toast?: string;
+    monitorSessionId?: string;
   };
+  extension: ExtensionStatus;
+}
+export interface ExtensionStatus {
+  connected: boolean;
+  nativeHostConnected: boolean;
+  protocolVersion: number;
+  extensionVersion?: string;
+  browser?: "chrome" | "edge";
+  sessionActive: boolean;
+  lastHeartbeat?: string;
+  lastCommunication?: string;
+  managedTabs: number;
+  lastError?: string;
 }
 export const defaultAutomation = (): AutomationConfig => ({
   enabled: false,
@@ -156,6 +181,17 @@ export const defaults: AppState = {
     language: "es",
     browserMode: "default",
     closeManagedTabs: true,
+    muteManagedStreams: true,
+    openStreamsInBackground: true,
+    focusStreamOnOpen: false,
+    closeExtensionTabsOnEnd: true,
+    closeExtensionTabsOnMonitorStop: false,
+    closeExtensionTabsOnAppClose: false,
+    closeInternalWindowsOnEnd: true,
+    closeInternalWindowsOnMonitorStop: true,
+    reopenOnNewMonitorSession: true,
+    extensionFallback: true,
+    notifyExtensionErrors: true,
     theme: "system",
     showStartNotice: true,
     platforms: { twitch: { enabled: false }, kick: { enabled: false } },
@@ -165,4 +201,11 @@ export const defaults: AppState = {
   bot: { status: "disconnected" },
   deviceAuth: { status: "idle" },
   monitor: { status: "off", errors: [], manuallyStopped: false },
+  extension: {
+    connected: false,
+    nativeHostConnected: false,
+    protocolVersion: 1,
+    sessionActive: false,
+    managedTabs: 0,
+  },
 };

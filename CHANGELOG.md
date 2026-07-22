@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.7
+
+- Añade tres modos de apertura: navegador externo, Chrome/Edge mediante extensión y navegador interno aislado.
+- Incorpora extensión Manifest V3 inerte sin sesión, protocolo validado, heartbeat y control exclusivo por `tabId`.
+- Añade relay Native Messaging con framing seguro, manifiestos HKCU separados y scripts de registro/desregistro.
+- Genera una sesión de monitor nueva al encender, evita duplicados y permite reapertura en una sesión posterior.
+- Amplía ajustes, pruebas, documentación y empaquetado de la extensión.
+
 ## 1.0.6
 
 - Completa el apagado del monitor eliminando `nextScan` sin escribir valores `undefined` en electron-store.

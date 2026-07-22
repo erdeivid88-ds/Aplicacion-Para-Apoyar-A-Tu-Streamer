@@ -1,0 +1,2 @@
+import {describe,expect,it} from "vitest"; import {BrowserExtensionClient} from "./browser-extension-client";
+describe("cliente de extensión",()=>{it("crea una sesión efímera no vacía",()=>{const a=new BrowserExtensionClient("1",()=>"off",()=>{});const b=new BrowserExtensionClient("1",()=>"off",()=>{});expect(a.appSessionId).not.toBe(b.appSessionId);expect(a.appSessionId.length).toBeGreaterThan(20)})});

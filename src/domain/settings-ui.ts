@@ -3,6 +3,7 @@ export const SETTINGS_CATEGORIES = [
   "General",
   "Monitor",
   "Navegador",
+  "Extensión",
   "Twitch",
   "Mensajes",
   "Notificaciones",

@@ -45,6 +45,7 @@ import {
 import { openOrReuseManaged } from "./managed-window";
 import { KickProvider, TwitchProvider } from "./providers";
 import { TwitchApiError, TwitchAuth } from "./twitch-auth";
+import { BrowserExtensionClient } from "./browser-extension-client";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const store = new Store<AppState>({ name: "app-data", defaults });
 let win: BrowserWindow | null = null,
@@ -54,6 +55,8 @@ let win: BrowserWindow | null = null,
 let monitorGeneration = 0;
 let scanController: AbortController | null = null;
 const managed = new Map<string, BrowserWindow>();
+const userClosedForMonitorSession = new Set<string>();
+let extensionClient: BrowserExtensionClient | null = null;
 const lock = new ScanLock();
 const auth = new TwitchAuth(() =>
   store.get("settings.platforms.twitch.clientId"),
@@ -74,6 +77,7 @@ function migrate() {
     nextScan: undefined,
     manuallyStopped: raw.monitor?.manuallyStopped ?? false,
   });
+  store.set("extension", { ...defaults.extension, ...raw.extension, connected: false, nativeHostConnected: false, sessionActive: false });
   store.set(
     "streamers",
     (raw.streamers ?? []).map((s) => ({
@@ -155,6 +159,10 @@ async function openStream(s: Streamer) {
     log(`Apertura bloqueada: ${validation.reason}`, "error", s);
     throw new Error(validation.reason);
   }
+  const monitorSessionId = store.get("monitor.monitorSessionId") ?? randomUUID();
+  const streamSessionId = s.sessionId ?? `${s.id}:${s.lastCheckedAt ?? "live"}`;
+  const blockKey = `${s.id}:${streamSessionId}:${monitorSessionId}`;
+  if (userClosedForMonitorSession.has(blockKey)) return;
   if (browserMode === "managed") {
     const result = (await openOrReuseManaged(
       reusable,
@@ -164,7 +172,6 @@ async function openStream(s: Streamer) {
           height: 760,
           show: false,
           webPreferences: {
-            partition: "persist:managed-browser",
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: true,
@@ -173,7 +180,22 @@ async function openStream(s: Streamer) {
       validation.url,
     )) as BrowserWindow;
     managed.set(s.id, result);
-    if (!reusable) result.once("closed", () => managed.delete(s.id));
+    if (!reusable) {
+      result.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      result.webContents.on("will-navigate", (event, url) => {
+        const checked = validateStreamUrl(s.platform, url);
+        if (!checked.valid || checked.url !== validation.url) event.preventDefault();
+      });
+      result.once("closed", () => { managed.delete(s.id); userClosedForMonitorSession.add(blockKey); });
+    }
+  } else if (browserMode === "extension") {
+    try {
+      const opened = await extensionClient?.request("open_stream", {streamerId:s.id,platform:s.platform,url:validation.url,streamSessionId,monitorSessionId,muted:store.get("settings.muteManagedStreams"),active:!store.get("settings.openStreamsInBackground")||store.get("settings.focusStreamOnOpen")});
+      if (opened) store.set("extension.managedTabs", Math.max(store.get("extension.managedTabs"), 1));
+    } catch (error) {
+      if (store.get("settings.extensionFallback")) await safeExternal(validation.url);
+      else throw error;
+    }
   } else await safeExternal(validation.url);
   if (store.get("settings.notifications"))
     new Notification({
@@ -285,7 +307,9 @@ async function scan(generation = monitorGeneration) {
           current.automationRuntime = defaultRuntime();
           log("El directo ha terminado; mensajería detenida.", "info", current);
           const tab = managed.get(current.id);
-          if (tab && store.get("settings.closeManagedTabs")) tab.close();
+          if (tab && store.get("settings.closeInternalWindowsOnEnd")) tab.close();
+          if (store.get("settings.browserMode") === "extension" && store.get("settings.closeExtensionTabsOnEnd") && previous.sessionId && store.get("monitor.monitorSessionId"))
+            void extensionClient?.request("get_stream_tabs").then(({tabs})=>tabs.find((item:{streamerId:string;streamSessionId:string;monitorSessionId:string})=>item.streamerId===current.id&&item.streamSessionId===previous.sessionId&&item.monitorSessionId===store.get("monitor.monitorSessionId"))).then(item=>item&&extensionClient?.request("close_stream",item)).catch(error=>log(`No se pudo cerrar la pestaña administrada: ${error.message}`,"warning",current));
         }
         await automate(current, generation);
         if (!monitorCurrent(generation)) return null;
@@ -314,6 +338,7 @@ async function scan(generation = monitorGeneration) {
         .flatMap((x) => (x.lastError ? [x.lastError] : []))
         .slice(0, 5),
       manuallyStopped: false,
+      monitorSessionId: store.get("monitor.monitorSessionId"),
     });
     emit();
     updateTray();
@@ -332,8 +357,13 @@ function start() {
   scanController?.abort();
   scanController = new AbortController();
   const generation = monitorGeneration;
+  const monitorSessionId = randomUUID();
+  userClosedForMonitorSession.clear();
+  if (store.get("settings.reopenOnNewMonitorSession"))
+    store.set("streamers", store.get("streamers").map(item => ({ ...item, openedSessionId: undefined })));
   schedule(generation);
   store.set("monitor.status", "starting");
+  store.set("monitor.monitorSessionId", monitorSessionId);
   store.set("monitor.manuallyStopped", false);
   store.set("monitor.toast", "Monitor encendido");
   emit();
@@ -358,9 +388,12 @@ async function stop(manual = true, forced = false) {
         automationRuntime: { ...item.automationRuntime, paused: true },
       })),
   );
-  if (forced && store.get("settings.closeManagedTabs"))
+  if (store.get("settings.closeInternalWindowsOnMonitorStop"))
     for (const window of managed.values())
       if (!window.isDestroyed()) window.close();
+  if (store.get("settings.closeExtensionTabsOnMonitorStop"))
+    await extensionClient?.request("close_all_managed_streams").catch(()=>{});
+  userClosedForMonitorSession.clear();
   log(
     forced
       ? "Monitor detenido de forma forzada"
@@ -384,6 +417,17 @@ function register() {
       return fn(...args);
     });
   handle("state:get", () => state());
+  handle("extension:ping", async () => {
+    const payload = await extensionClient?.request("ping");
+    store.set("extension", {...store.get("extension"), connected:true, sessionActive:true, ...payload, lastCommunication:new Date().toISOString(), lastError:undefined}); emit(); return payload;
+  });
+  handle("extension:test-open", async () => {
+    const item=store.get("streamers")[0]; if(!item) throw new Error("Añade un streamer para probar la apertura.");
+    const checked=validateStreamUrl(item.platform,item.url); if(!checked.valid) throw new Error(checked.reason);
+    return extensionClient?.request("open_stream",{streamerId:item.id,platform:item.platform,url:checked.url,streamSessionId:`manual:${randomUUID()}`,monitorSessionId:store.get("monitor.monitorSessionId")??`manual:${randomUUID()}`,muted:true,active:false});
+  });
+  handle("extension:mute-all", async () => { const {tabs=[]}=await extensionClient?.request("get_stream_tabs")??{}; await Promise.all(tabs.map((item:Record<string,unknown>)=>extensionClient?.request("mute_stream",item))); });
+  handle("extension:close-all", () => extensionClient?.request("close_all_managed_streams"));
   handle("monitor:start", () => start());
   handle("monitor:stop", () => stop());
   handle("monitor:force-stop", () => stop(true, true));
@@ -550,6 +594,17 @@ function register() {
       "language",
       "browserMode",
       "closeManagedTabs",
+      "muteManagedStreams",
+      "openStreamsInBackground",
+      "focusStreamOnOpen",
+      "closeExtensionTabsOnEnd",
+      "closeExtensionTabsOnMonitorStop",
+      "closeExtensionTabsOnAppClose",
+      "closeInternalWindowsOnEnd",
+      "closeInternalWindowsOnMonitorStop",
+      "reopenOnNewMonitorSession",
+      "extensionFallback",
+      "notifyExtensionErrors",
       "theme",
       "showStartNotice",
     ] as const)
@@ -698,6 +753,8 @@ app.whenReady().then(async () => {
   register();
   createWindow();
   createTray();
+  extensionClient = new BrowserExtensionClient(app.getVersion(), () => store.get("monitor.status"), patch => { store.set("extension", {...store.get("extension"),...patch}); emit(); });
+  extensionClient.start();
   try {
     store.set("bot", await auth.validate());
   } catch (error) {
@@ -713,6 +770,8 @@ app.on("before-quit", () => {
   quitting = true;
   auth.cancelDevice();
   void stop(false, true);
+  if (store.get("settings.closeExtensionTabsOnAppClose")) void extensionClient?.request("close_all_managed_streams").finally(()=>extensionClient?.stop());
+  else extensionClient?.stop();
   for (const window of managed.values())
     if (!window.isDestroyed()) window.close();
 });

@@ -1,6 +1,6 @@
 {
   "name": "apoya-a-tu-streamer",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Monitor y lanzador legítimo de directos de Twitch y Kick",
   "main": "dist-electron/main/index.js",
   "author": "Vortex Studio",
@@ -10,7 +10,12 @@
     "dev": "vite",
     "build:electron": "esbuild electron/main/index.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main/index.js && esbuild electron/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload/index.js",
     "build": "npm run typecheck && vite build && npm run build:electron && electron-builder --dir --publish never",
-    "build:win": "npm run typecheck && vite build && npm run build:electron && electron-builder --win nsis portable --publish never",
+    "build:extension": "powershell -NoProfile -ExecutionPolicy Bypass -File browser-extension/build.ps1",
+    "test:extension": "vitest run src/domain/browser-protocol.test.ts",
+    "package:extension": "powershell -NoProfile -ExecutionPolicy Bypass -File browser-extension/package.ps1",
+    "build:native-host": "esbuild native-host/src/index.ts --bundle --platform=node --format=cjs --outfile=native-host/dist/native-host.cjs",
+    "test:native-host": "vitest run native-host/src/framing.test.ts electron/main/browser-extension-client.test.ts",
+    "build:win": "npm run typecheck && vite build && npm run build:electron && npm run build:extension && npm run build:native-host && electron-builder --win nsis portable --publish never && npm run package:extension",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -50,7 +55,18 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "native-host/dist/**/*",
+      "native-host/manifests/**/*",
+      "native-host/scripts/**/*",
+      "browser-extension/dist/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      { "from": "native-host/dist", "to": "native-host" },
+      { "from": "native-host/manifests", "to": "native-host/manifests" },
+      { "from": "native-host/scripts", "to": "native-host/scripts" },
+      { "from": "native-host/native-host.cmd", "to": "native-host/native-host.cmd" },
+      { "from": "browser-extension/dist", "to": "browser-extension" }
     ],
     "win": {
       "target": [
@@ -63,7 +79,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "include": "native-host/installer.nsh"
     },
     "portable": {
       "artifactName": "Apoya-a-tu-Streamer-Portable-${version}-${arch}.${ext}"

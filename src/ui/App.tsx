@@ -682,7 +682,8 @@ function Settings({ state }: { state: AppState }) {
                 }
               >
                 <option value="default">Navegador predeterminado</option>
-                <option value="managed">Gestionado y silenciado</option>
+                <option value="extension">Navegador predeterminado con extensión</option>
+                <option value="managed">Navegador interno de la aplicación</option>
               </select>
               <small>
                 El navegador externo no puede silenciarse ni cerrarse desde la
@@ -690,14 +691,37 @@ function Settings({ state }: { state: AppState }) {
               </small>
             </label>
             <Check
-              label="Cerrar ventanas gestionadas al terminar"
+              label="Cerrar ventanas internas al terminar"
               checked={draft.closeManagedTabs}
               set={(v) => update("closeManagedTabs", v)}
             />
+            <Check label="Silenciar pestañas administradas" checked={draft.muteManagedStreams} set={(v)=>update("muteManagedStreams",v)} />
+            <Check label="Abrir en segundo plano" checked={draft.openStreamsInBackground} set={(v)=>update("openStreamsInBackground",v)} />
+            <Check label="Enfocar pestaña al abrir" checked={draft.focusStreamOnOpen} set={(v)=>update("focusStreamOnOpen",v)} />
+            <Check label="Cerrar pestaña al terminar" checked={draft.closeExtensionTabsOnEnd} set={(v)=>update("closeExtensionTabsOnEnd",v)} />
+            <Check label="Cerrar pestañas al apagar monitor" checked={draft.closeExtensionTabsOnMonitorStop} set={(v)=>update("closeExtensionTabsOnMonitorStop",v)} />
+            <Check label="Cerrar pestañas al cerrar aplicación" checked={draft.closeExtensionTabsOnAppClose} set={(v)=>update("closeExtensionTabsOnAppClose",v)} />
+            <Check label="Cerrar ventanas internas al apagar el monitor" checked={draft.closeInternalWindowsOnMonitorStop} set={(v)=>update("closeInternalWindowsOnMonitorStop",v)} />
+            <Check label="Usar navegador predeterminado si la extensión no está disponible" checked={draft.extensionFallback} set={(v)=>update("extensionFallback",v)} />
             <p>
               Las ventanas gestionadas se silencian antes y después de navegar,
               se reutilizan y enfocan sin duplicados.
             </p>
+          </div>
+        )}
+        {category === "Extensión" && (
+          <div className="settings-grid">
+            <h3>Extensión del navegador</h3>
+            <p>Estado: <b>{state.extension.connected ? "Aplicación conectada" : "Aplicación desconectada"}</b></p>
+            <p>Native Messaging: {state.extension.nativeHostConnected ? "conectado" : "desconectado"}<br/>Navegador: {state.extension.browser ?? "—"}<br/>Versión: {state.extension.extensionVersion ?? "—"}<br/>Protocolo: {state.extension.protocolVersion}<br/>Sesión activa: {state.extension.sessionActive ? "sí" : "no"}<br/>Último heartbeat: {state.extension.lastHeartbeat ?? "—"}<br/>Pestañas administradas: {state.extension.managedTabs}</p>
+            {state.extension.lastError && <p className="error">{state.extension.lastError}</p>}
+            <p>La extensión controla únicamente las pestañas que abre para esta aplicación mientras la aplicación está conectada.</p>
+            <button onClick={()=>void window.api.checkExtension()}>Comprobar conexión</button>
+            <button onClick={()=>void window.api.testExtension()}>Probar apertura</button>
+            <button onClick={()=>void window.api.muteExtensionTabs()}>Silenciar pestañas administradas</button>
+            <button onClick={()=>void window.api.closeExtensionTabs()}>Cerrar pestañas administradas</button>
+            <button onClick={()=>void window.api.open("https://www.twitch.tv/")}>Abrir instrucciones</button>
+            <button onClick={()=>void window.api.copy(JSON.stringify({connected:state.extension.connected,nativeHost:state.extension.nativeHostConnected,browser:state.extension.browser,version:state.extension.extensionVersion,protocol:state.extension.protocolVersion,managedTabs:state.extension.managedTabs,lastError:state.extension.lastError},null,2))}>Copiar diagnóstico</button>
           </div>
         )}
         {category === "Twitch" && (
@@ -758,7 +782,7 @@ function Settings({ state }: { state: AppState }) {
             <pre>
               {JSON.stringify(
                 {
-                  version: "1.0.6",
+                  version: "1.0.7",
                   platform: navigator.platform,
                   monitor: MONITOR_LABELS[state.monitor.status],
                   platforms: draft.platforms,
@@ -780,7 +804,7 @@ function Settings({ state }: { state: AppState }) {
                 void window.api.copy(
                   JSON.stringify(
                     {
-                      version: "1.0.6",
+                      version: "1.0.7",
                       monitor: state.monitor.status,
                       oauth: state.bot.status,
                       scopes: state.bot.scopes ?? [],

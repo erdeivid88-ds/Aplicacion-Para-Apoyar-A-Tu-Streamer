@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld("api", {
   stop: () => ipcRenderer.invoke("monitor:stop"),
   forceStop: () => ipcRenderer.invoke("monitor:force-stop"),
   scan: () => ipcRenderer.invoke("monitor:scan"),
+  checkExtension: () => ipcRenderer.invoke("extension:ping"),
+  testExtension: () => ipcRenderer.invoke("extension:test-open"),
+  muteExtensionTabs: () => ipcRenderer.invoke("extension:mute-all"),
+  closeExtensionTabs: () => ipcRenderer.invoke("extension:close-all"),
   connectTwitch: (type: TwitchAccountType) =>
     ipcRenderer.invoke("bot:connect", type),
   disconnectBot: () => ipcRenderer.invoke("bot:disconnect"),

@@ -6,8 +6,8 @@ import {
   validateSettings,
 } from "./settings-ui";
 describe("interfaz de ajustes", () => {
-  it("incluye ocho categorías", () =>
-    expect(SETTINGS_CATEGORIES).toHaveLength(8));
+  it("incluye nueve categorías", () =>
+    expect(SETTINGS_CATEGORIES).toHaveLength(9));
   it("traduce estados internos", () =>
     expect(MONITOR_LABELS["partial-error"]).toBe("⚠️ Activo con errores"));
   it("valida intervalos", () =>
