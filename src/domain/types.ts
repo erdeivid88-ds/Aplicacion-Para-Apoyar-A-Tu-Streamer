@@ -18,7 +18,7 @@ export type BotStatus =
   | "rate-limited"
   | "paused";
 export const DEFAULT_AUTO_MESSAGE =
-  "🤖 Mensaje automático autorizado por el canal: recuerda seguir las normas del chat.";
+  "HeyGuys HeyGuys HeyGuys";
 export interface AutomationConfig {
   enabled: boolean;
   authorized: boolean;
