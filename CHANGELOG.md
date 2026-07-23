@@ -2,6 +2,9 @@
 
 ## 1.1.0
 
+- Añade OAuth oficial de Kick con aplicación propia, Authorization Code, PKCE S256, callback localhost fijo, introspección y renovación cifrada.
+- Añade detección y apertura de directos, resolución oficial de canales y mensajes de chat `user` mediante la API pública de Kick.
+- Separa el planificador común de mensajes del escaneo y lo ejecuta en el proceso principal cada 30 segundos, también al minimizar.
 - Corrige la sesión OAuth de Twitch con renovación atómica single-flight, rotación segura del refresh token y reintento único tras 401.
 - Conserva la sesión ante red, 429 y errores 5xx; diferencia validación, renovación, indisponibilidad temporal y reconexión necesaria.
 - Añade validación horaria única en el proceso principal, diagnóstico OAuth seguro y confirmación para cambios reales de Client ID.

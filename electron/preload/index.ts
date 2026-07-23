@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.invoke("bot:switch-type", type),
   checkTwitchPermissions: () => ipcRenderer.invoke("bot:check"),
   updateTwitchClientId: (clientId: string, confirmed: boolean) => ipcRenderer.invoke("bot:update-client-id", { clientId, confirmed }),
+  kickConfiguration: () => ipcRenderer.invoke("kick:configuration"),
+  saveKickConfiguration: (clientId: string, clientSecret: string, redirectUri: string) => ipcRenderer.invoke("kick:save-configuration", { clientId, clientSecret, redirectUri }),
+  connectKick: () => ipcRenderer.invoke("kick:connect"),
+  checkKick: () => ipcRenderer.invoke("kick:check"),
+  disconnectKick: () => ipcRenderer.invoke("kick:disconnect"),
   saveStreamer: (value: Partial<Streamer>) =>
     ipcRenderer.invoke("streamer:save", value),
   resolveStreamer: (platform: string, value: string) =>
@@ -52,6 +57,7 @@ contextBridge.exposeInMainWorld("api", {
     }),
   open: (url: string) => ipcRenderer.invoke("external:open", url),
   copy: (text: string) => ipcRenderer.invoke("clipboard:write", text),
+  paste: () => ipcRenderer.invoke("clipboard:read"),
   clearActivity: () => ipcRenderer.invoke("activity:clear"),
   exportData: () => ipcRenderer.invoke("data:export"),
   importData: () => ipcRenderer.invoke("data:import"),

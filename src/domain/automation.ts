@@ -50,8 +50,6 @@ export function decideAutomation(
     return { send: false, reason: "offline", runtime: defaultRuntime() };
   if (runtime.sessionId !== streamer.sessionId)
     runtime = { ...defaultRuntime(), sessionId: streamer.sessionId };
-  if (streamer.platform !== "twitch")
-    return { send: false, reason: "kick-unavailable", runtime };
   if (!config.enabled) return { send: false, reason: "disabled", runtime };
   if (!config.authorized || !config.authorizedAt)
     return { send: false, reason: "unauthorized", runtime };

@@ -31,6 +31,11 @@ declare global {
       switchTwitchType: (type: TwitchAccountType) => Promise<void>;
       checkTwitchPermissions: () => Promise<void>;
       updateTwitchClientId: (clientId: string, confirmed: boolean) => Promise<void>;
+      kickConfiguration: () => Promise<{ configured: boolean; redirectUri: string; recommendedName: string; developerUrl: string }>;
+      saveKickConfiguration: (clientId: string, clientSecret: string, redirectUri: string) => Promise<void>;
+      connectKick: () => Promise<void>;
+      checkKick: () => Promise<void>;
+      disconnectKick: () => Promise<void>;
       saveStreamer: (value: Partial<Streamer>) => Promise<void>;
       resolveStreamer: (
         platform: Platform,
@@ -47,6 +52,7 @@ declare global {
       saveSettings: (value: Partial<Settings>) => Promise<void>;
       open: (url: string) => Promise<void>;
       copy: (text: string) => Promise<void>;
+      paste: () => Promise<string>;
       clearActivity: () => Promise<void>;
       exportData: () => Promise<void>;
       importData: () => Promise<void>;

@@ -148,6 +148,16 @@ export interface AppState {
   streamers: Streamer[];
   activity: Activity[];
   bot: BotConnection;
+  kick: {
+    configured: boolean;
+    status: "disconnected" | "connecting" | "connected" | "error";
+    displayName?: string;
+    userId?: string;
+    avatarUrl?: string;
+    scopes?: string[];
+    expiresAt?: string;
+    detail?: string;
+  };
   deviceAuth: DeviceAuthPublic;
   monitor: {
     status: MonitorStatus;
@@ -197,7 +207,7 @@ export const defaultRuntime = (): AutomationRuntime => ({
   paused: false,
 });
 export const defaults: AppState = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   settings: {
     scanMinutes: 15,
     idleMinutes: 10,
@@ -238,6 +248,7 @@ export const defaults: AppState = {
   streamers: [],
   activity: [],
   bot: { status: "disconnected" },
+  kick: { configured: false, status: "disconnected" },
   deviceAuth: { status: "idle" },
   monitor: { status: "off", errors: [], manuallyStopped: false },
   extension: {

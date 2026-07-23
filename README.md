@@ -63,9 +63,17 @@ Los tokens se cifran con `safeStorage` en el proceso principal. Nunca llegan al 
 
 ## Kick
 
-`Mensajería automática no disponible para Kick mediante la API oficial actual.`
+Cada usuario crea su propia aplicación en Kick Developer y configura localmente
+Client ID, Client Secret y la Redirect URI fija
+`http://localhost:17654/oauth/kick/callback`. El asistente abre el portal oficial,
+copia los valores no secretos y completa Authorization Code con PKCE S256 mediante
+un listener local. Credenciales y tokens quedan cifrados con `safeStorage`.
 
-No existe fallback por Playwright, DOM, scraping, pulsaciones ni cookies.
+La aplicación usa exclusivamente la API pública oficial para resolver canales,
+detectar directos y enviar mensajes de tipo `user`. Twitch y Kick comparten un
+planificador persistente de 30 segundos para el envío inicial y las repeticiones,
+independiente del intervalo de escaneo. No existe fallback por Playwright, DOM,
+scraping, pulsaciones ni cookies.
 
 ## Navegador gestionado y seguridad
 

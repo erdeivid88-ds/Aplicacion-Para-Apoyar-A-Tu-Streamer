@@ -101,6 +101,14 @@ describe("mensajería automática", () => {
   });
   it("Kick no está disponible", () =>
     expect(
-      decideAutomation(channel({ platform: "kick" }), Date.now()).reason,
-    ).toBe("kick-unavailable"));
+      decideAutomation(channel({
+        platform: "kick",
+        automation: {
+          ...defaultAutomation(),
+          enabled: true,
+          authorized: true,
+          authorizedAt: new Date().toISOString(),
+        },
+      }), Date.now()).send,
+    ).toBe(true));
 });

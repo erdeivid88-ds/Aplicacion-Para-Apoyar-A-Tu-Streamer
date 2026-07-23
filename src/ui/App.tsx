@@ -705,6 +705,11 @@ function Platforms({ state }: { state: AppState }) {
   const [accountType, setAccountType] = useState<"personal" | "bot">(
     state.bot.accountType ?? "personal",
   );
+  const [kickWizard, setKickWizard] = useState<"guide" | "credentials">();
+  const [kickClientId, setKickClientId] = useState("");
+  const [kickSecret, setKickSecret] = useState("");
+  const [showKickSecret, setShowKickSecret] = useState(false);
+  const kickRedirect = "http://localhost:17654/oauth/kick/callback";
   useEffect(() => {
     const timer = setTimeout(() => {
       if (state.bot.status === "disconnected" && clientId.trim() !== (twitch.clientId ?? "").trim() && /^[a-z0-9]{8,80}$/i.test(clientId.trim()))
@@ -840,9 +845,21 @@ function Platforms({ state }: { state: AppState }) {
             </StatusBadge>
           </div>
           <p className="feature-note">
-            Puedes comprobar el estado de canales con la API oficial. La
-            mensajería automática no está disponible actualmente.
+            OAuth oficial con Authorization Code y PKCE S256. A diferencia de
+            Twitch Device Flow, Kick exige Client ID, Client Secret y una
+            Redirect URI.
           </p>
+          <div className="card-actions">
+            <button onClick={() => setKickWizard("guide")}>Crear aplicación de Kick</button>
+            <button className="primary" disabled={!state.kick.configured || state.kick.status === "connecting"} onClick={() => void window.api.connectKick()}>
+              {state.kick.status === "connecting" ? "Conectando…" : "Conectar cuenta de Kick"}
+            </button>
+            {state.kick.status === "connected" && <button onClick={() => void window.api.disconnectKick()}>Desconectar</button>}
+          </div>
+          <StatusBadge tone={state.kick.status === "connected" ? "success" : state.kick.status === "error" ? "warning" : "neutral"}>
+            {state.kick.status === "connected" ? `Conectada: ${state.kick.displayName ?? "Kick"}` : state.kick.configured ? "Aplicación de Kick configurada" : "Sin configurar"}
+          </StatusBadge>
+          {state.kick.detail && <Alert tone="warning" title="Kick necesita atención">{state.kick.detail}</Alert>}
           <SettingRow
             title="Habilitar Kick"
             description="Incluye tus canales de Kick en cada comprobación."
@@ -860,6 +877,23 @@ function Platforms({ state }: { state: AppState }) {
               }
             />
           </SettingRow>
+          {kickWizard && <div className="backdrop"><div className="modal installer-modal" role="dialog" aria-modal="true">
+            <button className="skip" onClick={() => setKickWizard(undefined)}>Cerrar</button>
+            <h2>Crear aplicación de Kick</h2>
+            {kickWizard === "guide" ? <>
+              <p>Kick necesita una aplicación propia para permitir que Apoya a tu Streamer envíe mensajes con tu cuenta. La configuración se realiza una sola vez.</p>
+              <ol className="guide-steps"><li>Pulsa “Abrir Kick Developer”.</li><li>Inicia sesión en Kick.</li><li>Crea una nueva aplicación.</li><li>Pon como nombre: <code>Apoya a tu Streamer</code>.</li><li>Pega la Redirect URI que aparece aquí.</li><li>Guarda la aplicación.</li><li>Copia el Client ID.</li><li>Copia el Client Secret.</li><li>Vuelve a esta pantalla.</li><li>Pulsa “Ya he creado la aplicación”.</li></ol>
+              <label className="field">Nombre recomendado<input readOnly value="Apoya a tu Streamer" /></label>
+              <label className="field">Redirect URI<input readOnly value={kickRedirect} /></label>
+              <div className="card-actions"><button onClick={() => void window.api.open("https://dev.kick.com/")}>Abrir Kick Developer</button><button onClick={() => void window.api.copy(kickRedirect)}>Copiar Redirect URI</button><button onClick={() => void window.api.copy("Apoya a tu Streamer")}>Copiar nombre recomendado</button><button className="primary" onClick={() => setKickWizard("credentials")}>Ya he creado la aplicación</button></div>
+            </> : <>
+              <label className="field">Client ID<div className="inline-field"><input value={kickClientId} onChange={e => setKickClientId(e.target.value)} /><button onClick={() => void window.api.paste().then(setKickClientId)}>Pegar</button></div></label>
+              <label className="field">Client Secret<div className="inline-field"><input type={showKickSecret ? "text" : "password"} value={kickSecret} onChange={e => setKickSecret(e.target.value)} /><button onClick={() => void window.api.paste().then(setKickSecret)}>Pegar</button><button onClick={() => setShowKickSecret(!showKickSecret)}>{showKickSecret ? "Ocultar" : "Mostrar"}</button></div></label>
+              <label className="field">Redirect URI<input readOnly value={kickRedirect} /></label>
+              <Alert tone="info" title="Almacenamiento local">El Client Secret se guarda cifrado únicamente en este ordenador y no se envía a Vortex Studio.</Alert>
+              <button className="primary" disabled={!kickClientId.trim() || !kickSecret.trim()} onClick={() => void window.api.saveKickConfiguration(kickClientId.trim(), kickSecret.trim(), kickRedirect).then(() => { setKickSecret(""); setKickWizard(undefined); })}>Guardar configuración</button>
+            </>}
+          </div></div>}
         </Card>
       </div>
     </section>
@@ -889,7 +923,7 @@ function Automations({ state }: { state: AppState }) {
                   <p>
                     {s.platform === "twitch"
                       ? `Enviará ${state.bot.displayName ?? "la cuenta conectada"}`
-                      : "Mensajería no disponible en Kick"}
+                      : `Enviará ${state.kick.displayName ?? "la cuenta de Kick conectada"}`}
                   </p>
                 </div>
                 <Switch

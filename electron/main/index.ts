@@ -49,6 +49,7 @@ import {
 import { InternalBrowserManager, type InternalTab } from "./internal-browser";
 import { KickProvider, TwitchProvider } from "./providers";
 import { TwitchApiError, TwitchAuth } from "./twitch-auth";
+import { KickAuth, KICK_DEVELOPER_URL, KICK_REDIRECT_URI } from "./kick-auth";
 import { BrowserExtensionClient } from "./browser-extension-client";
 import { errorReportMailto } from "../../src/domain/support";
 import {
@@ -63,6 +64,7 @@ const store = new Store<AppState>({ name: "app-data", defaults });
 let win: BrowserWindow | null = null,
   tray: Tray | null = null,
   timer: NodeJS.Timeout | null = null,
+  automationTimer: NodeJS.Timeout | null = null,
   quitting = false;
 let monitorGeneration = 0;
 let scanController: AbortController | null = null;
@@ -93,12 +95,19 @@ const lock = new ScanLock();
 const auth = new TwitchAuth(() =>
   store.get("settings.platforms.twitch.clientId"),
 );
+const kickAuth = new KickAuth();
 function migrate() {
   const raw = store.store as AppState;
-  store.set("schemaVersion", 5);
+  store.set("schemaVersion", 6);
   store.set("settings", migrateSettings110(raw));
   store.set("bot", migrateConnectionFrom102(raw.bot));
   store.set("deviceAuth", raw.deviceAuth ?? { status: "idle" });
+  store.set("kick", {
+    ...defaults.kick,
+    ...raw.kick,
+    configured: kickAuth.configured(),
+    status: "disconnected",
+  });
   store.set("monitor", {
     ...raw.monitor,
     status: "off",
@@ -210,7 +219,7 @@ function scheduleReopen(
         const fresh =
           streamer.platform === "twitch"
             ? await new TwitchProvider(auth).check(streamer)
-            : await new KickProvider().check(streamer);
+            : await new KickProvider(kickAuth).check(streamer);
         if (!fresh.live || fresh.sessionId !== closed.streamSessionId) return;
         await openStream({ ...streamer, ...fresh });
         tracking.count++;
@@ -271,6 +280,7 @@ const safeExternal = (value: string) => {
       "chromewebstore.google.com",
       "microsoftedge.microsoft.com",
       "dev.twitch.tv",
+      "dev.kick.com",
       "github.com",
     ].includes(url.hostname)
   )
@@ -394,17 +404,24 @@ async function automate(s: Streamer, generation: number) {
   if (!monitorCurrent(generation)) return;
   const decision = decideAutomation(s, Date.now());
   s.automationRuntime = decision.runtime;
-  if (decision.reason === "unauthorized" && s.automation.enabled)
+  if (decision.reason === "unauthorized" && s.automation.enabled && s.platform === "twitch")
     store.set("bot.status", "unauthorized-channel");
   if (!decision.send) return;
-  if (store.get("bot.status") !== "connected") return;
+  if (
+    (s.platform === "twitch" && store.get("bot.status") !== "connected") ||
+    (s.platform === "kick" && store.get("kick.status") !== "connected")
+  ) return;
   try {
-    const broadcasterId =
-      s.externalId ?? (await auth.resolveBroadcaster(s.normalizedName));
+    if (s.platform === "twitch") {
+      const broadcasterId =
+        s.externalId ?? (await auth.resolveBroadcaster(s.normalizedName));
+      if (!monitorCurrent(generation)) return;
+      await auth.send(broadcasterId, sanitizeMessage(s.automation.message));
+      s.externalId = broadcasterId;
+    } else {
+      await kickAuth.send(sanitizeMessage(s.automation.message));
+    }
     if (!monitorCurrent(generation)) return;
-    await auth.send(broadcasterId, sanitizeMessage(s.automation.message));
-    if (!monitorCurrent(generation)) return;
-    s.externalId = broadcasterId;
     s.automationRuntime = recordSuccess(
       s.automationRuntime,
       new Date().toISOString(),
@@ -416,12 +433,20 @@ async function automate(s: Streamer, generation: number) {
     );
   } catch (error) {
     s.automationRuntime = recordFailure(s.automationRuntime);
-    const status = botStatus(error);
-    store.set("bot", {
-      ...store.get("bot"),
-      status,
-      detail: error instanceof Error ? error.message : "Error de Twitch",
-    });
+    if (s.platform === "twitch") {
+      const status = botStatus(error);
+      store.set("bot", {
+        ...store.get("bot"),
+        status,
+        detail: error instanceof Error ? error.message : "Error de Twitch",
+      });
+    } else {
+      store.set("kick", {
+        ...store.get("kick"),
+        status: "error",
+        detail: error instanceof Error ? error.message : "Error de Kick",
+      });
+    }
     log(
       `Fallo de mensajería automática (${s.automationRuntime.consecutiveErrors}/3): ${error instanceof Error ? error.message : "error"}.`,
       "error",
@@ -456,7 +481,7 @@ async function scan(generation = monitorGeneration) {
         const result =
           previous.platform === "twitch"
             ? await new TwitchProvider(auth).check(previous)
-            : await new KickProvider().check(previous);
+            : await new KickProvider(kickAuth).check(previous);
         if (!monitorCurrent(generation)) return null;
         const change = transition(previous, result);
         const current = {
@@ -515,8 +540,6 @@ async function scan(generation = monitorGeneration) {
                 ),
               );
         }
-        await automate(current, generation);
-        if (!monitorCurrent(generation)) return null;
         items[i] = current;
       } catch (error) {
         partial = true;
@@ -544,6 +567,7 @@ async function scan(generation = monitorGeneration) {
       manuallyStopped: false,
       monitorSessionId: store.get("monitor.monitorSessionId"),
     });
+    void automationTick(generation);
     emit();
     updateTray();
     return true;
@@ -555,6 +579,25 @@ function schedule(generation: number) {
     () => void scan(generation),
     Math.max(5, store.get("settings.scanMinutes")) * 60000,
   );
+}
+let automationTickRunning = false;
+async function automationTick(generation: number) {
+  if (automationTickRunning || !monitorCurrent(generation)) return;
+  automationTickRunning = true;
+  try {
+    const items = [...store.get("streamers")];
+    for (const item of items) await automate(item, generation);
+    if (monitorCurrent(generation)) {
+      store.set("streamers", items);
+      emit();
+    }
+  } finally {
+    automationTickRunning = false;
+  }
+}
+function scheduleAutomations(generation: number) {
+  if (automationTimer) clearInterval(automationTimer);
+  automationTimer = setInterval(() => void automationTick(generation), 30_000);
 }
 function start() {
   monitorGeneration++;
@@ -571,6 +614,7 @@ function start() {
         .map((item) => ({ ...item, openedSessionId: undefined })),
     );
   schedule(generation);
+  scheduleAutomations(generation);
   store.set("monitor.status", "starting");
   store.set("monitor.monitorSessionId", monitorSessionId);
   store.set("monitor.manuallyStopped", false);
@@ -588,6 +632,8 @@ async function stop(manual = true, forced = false) {
   scanController = null;
   if (timer) clearInterval(timer);
   timer = null;
+  if (automationTimer) clearInterval(automationTimer);
+  automationTimer = null;
   store.set(
     "streamers",
     store.get("streamers").map((item) => ({
@@ -781,6 +827,45 @@ function register() {
   handle("bot:check", async () => {
     await validateTwitchSession();
   });
+  handle("kick:configuration", () => ({
+    configured: kickAuth.configured(),
+    redirectUri: KICK_REDIRECT_URI,
+    recommendedName: "Apoya a tu Streamer",
+    developerUrl: KICK_DEVELOPER_URL,
+  }));
+  handle("kick:save-configuration", (value) => {
+    const input = value as { clientId?: unknown; clientSecret?: unknown; redirectUri?: unknown };
+    if (input.redirectUri !== KICK_REDIRECT_URI)
+      throw new Error("La Redirect URI no coincide con la registrada.");
+    if (typeof input.clientId !== "string" || typeof input.clientSecret !== "string")
+      throw new Error("Credenciales de Kick no válidas.");
+    kickAuth.saveCredentials(input.clientId, input.clientSecret);
+    store.set("settings.platforms.kick.clientId", input.clientId.trim());
+    store.set("kick", { configured: true, status: "disconnected" });
+    emit();
+  });
+  handle("kick:connect", async () => {
+    store.set("kick", { ...store.get("kick"), configured: kickAuth.configured(), status: "connecting", detail: undefined });
+    emit();
+    try {
+      store.set("kick", await kickAuth.connect());
+      emit();
+      log("Cuenta de Kick conectada mediante OAuth oficial.", "info");
+    } catch (error) {
+      store.set("kick", { ...store.get("kick"), status: "error", detail: error instanceof Error ? error.message : "Error OAuth de Kick" });
+      emit();
+      throw error;
+    }
+  });
+  handle("kick:check", async () => {
+    store.set("kick", await kickAuth.identity());
+    emit();
+  });
+  handle("kick:disconnect", () => {
+    kickAuth.clearTokens();
+    store.set("kick", { configured: kickAuth.configured(), status: "disconnected" });
+    emit();
+  });
   handle("bot:update-client-id", (value) => {
     const request = value as { clientId?: unknown; confirmed?: unknown };
     if (typeof request.clientId !== "string") throw new Error("Client ID no válido.");
@@ -808,7 +893,7 @@ function register() {
     }
     if (!validName(login)) throw new Error("Nombre de canal no válido.");
     if (platform === "kick")
-      return { externalId: "", login, displayName: login };
+      return kickAuth.resolveChannel(login);
     const user = await auth.resolveChannel(login);
     return {
       externalId: user.id,
@@ -890,7 +975,7 @@ function register() {
     const result =
       streamer.platform === "twitch"
         ? await new TwitchProvider(auth).check(streamer)
-        : await new KickProvider().check(streamer);
+        : await new KickProvider(kickAuth).check(streamer);
     if (!result.live) throw new Error("El streamer ya no está en directo.");
     await openStream({ ...streamer, ...result });
   });
@@ -990,6 +1075,7 @@ function register() {
       throw new Error("Texto no válido.");
     clipboard.writeText(value);
   });
+  handle("clipboard:read", () => clipboard.readText().slice(0, 500));
   handle("activity:clear", () => {
     store.set("activity", []);
     emit();
