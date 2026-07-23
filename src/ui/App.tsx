@@ -10,7 +10,6 @@ import { MONITOR_LABELS, validateSettings } from "../domain/settings-ui";
 import {
   errorReportMailto,
   errorReportTemplate,
-  extensionStoreUrl,
   IDS_URL,
   safeDiagnostic,
   SUPPORT_EMAIL,
@@ -1079,7 +1078,7 @@ function Browser({ state }: { state: AppState }) {
           </StatusBadge>
           <div className="card-actions">
             <button className="primary" onClick={() => setInstaller(true)}>
-              Añadir extensión
+              Configurar extensión
             </button>
             <button
               onClick={async () => {
@@ -1140,32 +1139,21 @@ function ExtensionInstaller({ state, close }: { state: AppState; close: () => vo
   const [detected, setDetected] = useState({ chrome: false, edge: false });
   const [stage, setStage] = useState<InstallerStage>(state.extension.connected ? "connected" : "pending");
   const [message, setMessage] = useState("");
-  const [development, setDevelopment] = useState(false);
   const [path, setPath] = useState("");
   const [extensionId, setExtensionId] = useState("");
-  const storeUrl = extensionStoreUrl(browser);
   useEffect(() => {
     void window.api.detectBrowsers().then(setDetected);
     void window.api.extensionInfo().then((info) => {
       setPath(info.path);
       setExtensionId(info.extensionId);
-    }).catch(() => undefined);
+    }).catch((error) => {
+      setStage("error");
+      setMessage(error instanceof Error ? error.message : "No se encontró la carpeta de la extensión. Vuelve a compilar o reinstala la aplicación.");
+    });
   }, []);
   const choose = (value: "chrome" | "edge") => {
     setBrowser(value);
     void window.api.saveSettings({ extensionBrowser: value });
-  };
-  const openDevelopment = async () => {
-    setDevelopment(true);
-    setMessage("");
-    try {
-      const info = await window.api.extensionInfo();
-      setPath(info.path);
-      setExtensionId(info.extensionId);
-    } catch (error) {
-      setStage("error");
-      setMessage(error instanceof Error ? error.message : "No se encontró la carpeta de la extensión. Vuelve a compilar o reinstala la aplicación.");
-    }
   };
   const configure = async () => {
     setStage("configuring"); setMessage("Configurando el conector…");
@@ -1173,7 +1161,7 @@ function ExtensionInstaller({ state, close }: { state: AppState; close: () => vo
       if (!/^[a-p]{32}$/.test(extensionId)) throw new Error("ID incorrecto. Debe tener 32 letras minúsculas entre a y p.");
       const value = await window.api.registerNativeHost(browser, extensionId);
       if (!value.registered) throw new Error("El conector del navegador no está registrado.");
-      setStage("configured"); setMessage("Conector registrado. Comprobando comunicación…");
+      setStage("configured"); setMessage("Conector registrado correctamente.");
       return true;
     } catch (error) { setStage("error"); setMessage(error instanceof Error ? error.message : "No se pudo configurar el conector."); return false; }
   };
@@ -1200,24 +1188,19 @@ function ExtensionInstaller({ state, close }: { state: AppState; close: () => vo
     <div className="backdrop">
       <div className="modal installer-modal" role="dialog" aria-modal="true" aria-labelledby="installer-title">
         <button className="skip" onClick={close}>Cerrar</button>
-        <h2 id="installer-title">Instalar extensión del navegador</h2>
+        <h2 id="installer-title">Configurar extensión</h2>
         <p>Selecciona el navegador donde quieres utilizar Apoya a tu Streamer.</p>
         <div className="browser-choice">
           {(["chrome", "edge"] as const).map((item) => <button key={item} className={browser === item ? "selected" : ""} onClick={() => choose(item)}><b>{item === "chrome" ? "◉ Google Chrome" : "e Microsoft Edge"}</b><span>{detected[item] ? "Navegador instalado" : "Navegador no detectado"}</span><small>{state.extension.browser === item && state.extension.connected ? "Extensión conectada" : "Extensión no comprobada"}</small></button>)}
         </div>
         <ol className="install-progress">
-          <li className="done">Navegador seleccionado</li><li className={stage !== "pending" ? "done" : ""}>Extensión instalada</li><li className={["configured","checking","connected"].includes(stage) ? "done" : ""}>Conector registrado</li><li className={stage === "connected" ? "done" : ""}>Comunicación comprobada</li><li className={stage === "connected" ? "done" : ""}>Listo para usar</li>
+          <li className={detected[browser] ? "done" : ""}>{detected[browser] ? "Navegador detectado" : "Navegador no detectado"}</li><li className={path ? "done" : ""}>Extensión incluida</li><li className={["configured","checking","connected"].includes(stage) ? "done" : ""}>Conector registrado</li><li className={stage === "connected" ? "done" : ""}>{stage === "connected" ? "Extensión conectada" : stage === "checking" ? "Comprobando conexión" : "Extensión no cargada"}</li>
         </ol>
-        {!development ? <>
-          {!storeUrl && <Alert tone="info" title="Versión de prueba"><p>La extensión todavía no está disponible en la tienda oficial. Durante las pruebas debes cargarla manualmente desde la carpeta incluida con la aplicación.</p><p>Cuando la extensión se publique en Microsoft Edge Add-ons y Chrome Web Store, este asistente abrirá directamente su página oficial de instalación.</p></Alert>}
-          {storeUrl && <div className="install-instructions"><p>{browser === "chrome" ? "Pulsa Añadir a Chrome, confirma Añadir extensión y vuelve a la aplicación." : "Pulsa Obtener, confirma la instalación y vuelve a la aplicación."}</p><button className="primary" onClick={() => void window.api.open(storeUrl)}>Instalar desde la tienda</button><button onClick={() => { setStage("installed"); setMessage("Extensión instalada. Configura ahora la conexión."); }}>Ya la he instalado</button></div>}
-          {!storeUrl && <div className="card-actions"><button className="primary" onClick={() => void openDevelopment()}>Instalar versión de prueba</button></div>}
-        </> : <div className="install-instructions development-flow"><Alert tone="warning" title="Versión de prueba">Sigue estos pasos en {browser === "edge" ? "Microsoft Edge" : "Google Chrome"}.</Alert><ol><li>Abre {browser === "edge" ? "Microsoft Edge" : "Google Chrome"}.</li><li>Copia la dirección <code>{browser}://extensions</code>.</li><li>Pégala en la barra de direcciones.</li><li>Activa “Modo de desarrollador”.</li><li>Pulsa “{browser === "edge" ? "Cargar desempaquetada" : "Cargar descomprimida"}”.</li><li>Selecciona la carpeta mostrada a continuación.</li></ol><div className="extension-path"><code>{path || "Comprobando carpeta…"}</code><button disabled={!path} onClick={() => void window.api.copy(path)}>Copiar ruta de la extensión</button></div><label className="field">ID de la extensión<input value={extensionId} onChange={(event) => setExtensionId(event.target.value.trim().toLowerCase())} maxLength={32} /><small>Cópialo desde la tarjeta de la extensión si no coincide con el valor mostrado.</small></label><div className="card-actions"><button onClick={() => void window.api.copy(`${browser}://extensions`)}>Copiar dirección</button><button disabled={!path} onClick={() => void window.api.showExtensionFolder()}>Abrir carpeta de la extensión</button><button className="primary" disabled={!path} onClick={() => void loaded()}>Ya la he cargado</button><button onClick={() => void check()}>Comprobar conexión</button></div></div>}
-        {!development && storeUrl && <div className="card-actions"><button className="primary" onClick={() => void configure()}>Configurar conexión</button><button onClick={() => void check()}>Comprobar conexión</button></div>}
-        {stage === "error" && <div className="card-actions"><button onClick={() => void (development ? loaded() : check())}>Reintentar</button></div>}
+        <div className="install-instructions development-flow"><Alert tone="info" title="Extensión incluida">La extensión ya está incluida con Apoya a tu Streamer. Solo tienes que cargarla una vez en el navegador.</Alert><ol><li>Abre {browser === "edge" ? "Microsoft Edge" : "Google Chrome"}.</li><li>Copia la dirección <code>{browser}://extensions</code> y pégala en la barra de direcciones.</li><li>Activa “Modo de desarrollador”.</li><li>Pulsa “{browser === "edge" ? "Cargar desempaquetada" : "Cargar descomprimida"}”.</li><li>Selecciona la carpeta mostrada a continuación.</li></ol><div className="extension-path"><code>{path || "Comprobando carpeta…"}</code><button disabled={!path} onClick={() => void window.api.copy(path)}>Copiar ruta</button></div><label className="field">ID de extensión<input value={extensionId} onChange={(event) => setExtensionId(event.target.value.trim().toLowerCase())} maxLength={32} /><small>Copia el ID que aparece en la tarjeta de la extensión.</small></label><div className="card-actions"><button onClick={() => void window.api.copy(`${browser}://extensions`)}>Copiar dirección</button><button disabled={!path} onClick={() => void window.api.showExtensionFolder()}>Abrir carpeta de la extensión</button><button onClick={() => void configure()}>Registrar conector</button><button className="primary" disabled={!path} onClick={() => void loaded()}>Ya la he cargado</button><button onClick={() => void check()}>Comprobar conexión</button></div></div>
+        {stage === "error" && <div className="card-actions"><button onClick={() => void loaded()}>Reintentar</button></div>}
         {message && <Alert tone={stage === "error" ? "error" : "info"} title={stage === "error" ? "No se pudo completar" : "Estado"}>{message}</Alert>}
         {stage === "error" && <SupportActions state={state} compact />}
-        <details><summary>Detalles técnicos</summary><p>El conector se registra para tu usuario de Windows y autoriza únicamente el ID estable de esta extensión.</p></details>
+        <details><summary>Ver detalles técnicos</summary><p>El conector se registra para tu usuario de Windows y autoriza únicamente el ID indicado.</p></details>
         {!detected[browser] && <details><summary>No aparece mi navegador</summary><p>Puedes continuar si está instalado en otra ruta. Abre manualmente la página de extensiones y sigue los mismos pasos.</p></details>}
       </div>
     </div>
@@ -1663,7 +1646,7 @@ function HelpContent({ state }: { state: AppState }) {
       <Card><h4>Configurar Twitch</h4><p>Añade tu Client ID público y conecta tu cuenta con el inicio seguro de Twitch.</p></Card>
       <Card><h4>Añadir streamers</h4><p>Introduce un login o URL. Twitch completa automáticamente ID, nombre y avatar.</p></Card>
       <Card><h4>Obtener IDs</h4><p>Si una ID no se puede resolver, usa Vortex IDs junto al campo de ID.</p><button onClick={() => void window.api.open(IDS_URL)}>Abrir Vortex IDs</button></Card>
-      <Card><h4>Instalar extensión</h4><p>Usa “Añadir extensión” en Navegador y sigue el asistente para Chrome o Edge.</p></Card>
+      <Card><h4>Configurar extensión</h4><p>La extensión viene incluida. Usa “Configurar extensión” en Navegador y sigue el asistente para Chrome o Edge.</p></Card>
       <Card><h4>Solución de problemas</h4><p>Comprueba por separado la extensión, el conector y la comunicación.</p></Card>
     </div>
     <h3>Correo de soporte</h3><button className="email-link" onClick={() => void window.api.open(`mailto:${SUPPORT_EMAIL}`)}>{SUPPORT_EMAIL}</button><button onClick={() => void window.api.copy(SUPPORT_EMAIL)}>Copiar correo</button>
@@ -1672,7 +1655,7 @@ function HelpContent({ state }: { state: AppState }) {
 }
 
 function HelpSupport({ state, go }: { state: AppState; go: (page: Page) => void }) {
-  return <section><PageHeader title="Ayuda y soporte" description="Guías sencillas, solución de problemas y contacto con Vortex Studio." action={<button onClick={() => go("Navegador")}>Instalar extensión</button>} /><HelpContent state={state} /></section>;
+  return <section><PageHeader title="Ayuda y soporte" description="Guías sencillas, solución de problemas y contacto con Vortex Studio." action={<button onClick={() => go("Navegador")}>Configurar extensión</button>} /><HelpContent state={state} /></section>;
 }
 
 function Onboarding({ state, go }: { state: AppState; go: (p: Page) => void }) {

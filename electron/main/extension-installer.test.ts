@@ -18,5 +18,11 @@ describe("instalador seguro de extensión", () => {
     expect(app).toContain("Ya la he cargado");
     expect(app).toContain("Navegador instalado");
     expect(app).toContain("Extensión no comprobada");
+    expect(main).toContain("Google/Chrome/Application/chrome.exe");
+    expect(main).toContain("Microsoft/Edge/Application/msedge.exe");
+    expect(main).toContain("^[a-p]{32}$");
+    expect(main).toContain("unregisterNativeHost");
+    expect(app).toContain("Registrar conector");
+    expect(app).not.toMatch(/Abrir tienda|Instalar desde la tienda|versión de prueba/i);
   });
 });

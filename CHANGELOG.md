@@ -4,8 +4,8 @@
 
 - Limita Vortex IDs a contextos donde se solicita una ID y lo elimina de Kick general y Ajustes avanzados.
 - Añade Ayuda y soporte, informes por correo con plantilla segura y diagnóstico copiable sin secretos.
-- Incorpora un asistente público para Chrome y Edge con tienda, versión de prueba, detección, registro HKCU mediante IPC y comprobación por ping.
-- Prepara la extensión para tiendas con iconos, privacidad, permisos documentados y ZIP limpio.
+- Incorpora un asistente local para Chrome y Edge con detección, registro HKCU mediante IPC y comprobación por ping.
+- Incluye la extensión dentro de la aplicación con iconos, privacidad documentada y ZIP limpio, sin depender de tiendas.
 - Corrige la instalación de prueba para no delegar `edge://` ni `chrome://` a Windows, valida la carpeta incluida y permite abrirla mediante un IPC seguro.
 - Encadena confirmación de carga, validación del ID, registro del conector, diagnóstico y ping con estados visibles.
 - Rediseña por completo la experiencia pública con navegación adaptable, tarjetas visuales y lenguaje natural.

@@ -41,7 +41,7 @@ Si una pestaña administrada se cierra mientras el directo continúa, la aplicac
 
 Permisos: `tabs`, `storage`, `nativeMessaging`, y acceso limitado a URLs de canal de Twitch y Kick. No se solicitan cookies, historial, `webRequest`, scripting ni `<all_urls>`.
 
-Si la extensión no responde, el fallback predeterminado abre el navegador normal; puede desactivarse en Ajustes. Chrome/Edge no permiten instalar silenciosamente una extensión normal: para producción deben configurarse las URLs de sus tiendas.
+Si la extensión no responde, el fallback predeterminado abre el navegador normal; puede desactivarse en Ajustes. La extensión está incluida con la aplicación y el asistente guía su carga manual en Chrome o Edge, el único paso que el navegador exige al usuario.
 
 ### Diagnóstico
 
