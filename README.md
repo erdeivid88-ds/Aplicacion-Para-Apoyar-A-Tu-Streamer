@@ -1,6 +1,12 @@
 # Apoya a tu Streamer
 
-Versión actual: **1.0.8**.
+Versión actual: **1.1.0**.
+
+## Una experiencia pensada para todo el mundo
+
+La versión 1.1.0 organiza la aplicación en Inicio, Streamers, Plataformas, Automatizaciones, Navegador, Actividad y Ajustes. Incluye navegación adaptable, temas claro/oscuro/sistema, onboarding, estados vacíos útiles, ayuda contextual y guardado automático con validación y debounce.
+
+Al añadir un canal de Twitch puedes escribir su login o URL: la aplicación intenta resolver automáticamente su ID, nombre y avatar mediante Helix. Como alternativa, la ayuda **Obtener ID** abre [ids.vortexstudio.es](https://ids.vortexstudio.es) en el navegador predeterminado.
 
 ## Modos de apertura
 

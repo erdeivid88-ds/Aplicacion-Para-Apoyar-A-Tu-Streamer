@@ -1,5 +1,6 @@
 import type {
   AppState,
+  Platform,
   Settings,
   Streamer,
   TwitchAccountType,
@@ -24,6 +25,15 @@ declare global {
       switchTwitchType: (type: TwitchAccountType) => Promise<void>;
       checkTwitchPermissions: () => Promise<void>;
       saveStreamer: (value: Partial<Streamer>) => Promise<void>;
+      resolveStreamer: (
+        platform: Platform,
+        value: string,
+      ) => Promise<{
+        externalId: string;
+        login: string;
+        displayName: string;
+        avatar?: string;
+      }>;
       deleteStreamer: (id: string) => Promise<void>;
       retryStream: (id: string) => Promise<void>;
       cancelReopen: (id: string) => Promise<void>;

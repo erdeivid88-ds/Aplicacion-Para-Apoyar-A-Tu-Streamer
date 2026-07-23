@@ -383,6 +383,9 @@ export class TwitchAuth {
     return user;
   }
   async resolveBroadcaster(login: string) {
+    return (await this.resolveChannel(login)).id;
+  }
+  async resolveChannel(login: string) {
     const token = await this.accessToken();
     const response = await fetch(
       `https://api.twitch.tv/helix/users?login=${encodeURIComponent(login)}`,
@@ -395,9 +398,22 @@ export class TwitchAuth {
     );
     if (!response.ok)
       throw await this.responseError(response, "No se pudo resolver el canal.");
-    const data = (await response.json()) as { data: { id: string }[] };
+    const data = (await response.json()) as {
+      data: {
+        id: string;
+        login: string;
+        display_name: string;
+        profile_image_url: string;
+      }[];
+    };
     if (!data.data[0]) throw new TwitchApiError(404, "Canal no encontrado.");
-    return data.data[0].id;
+    const user = data.data[0];
+    return {
+      id: user.id,
+      login: user.login,
+      displayName: user.display_name,
+      avatar: user.profile_image_url,
+    };
   }
   async checkLive(login: string): Promise<LiveResult> {
     const token = await this.accessToken();

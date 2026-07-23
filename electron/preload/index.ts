@@ -5,6 +5,7 @@ import type {
   Streamer,
   TwitchAccountType,
 } from "../../src/domain/types";
+let settingsRevision = 0;
 contextBridge.exposeInMainWorld("api", {
   state: (): Promise<AppState> => ipcRenderer.invoke("state:get"),
   onState: (callback: (state: AppState) => void) => {
@@ -31,11 +32,17 @@ contextBridge.exposeInMainWorld("api", {
   checkTwitchPermissions: () => ipcRenderer.invoke("bot:check"),
   saveStreamer: (value: Partial<Streamer>) =>
     ipcRenderer.invoke("streamer:save", value),
+  resolveStreamer: (platform: string, value: string) =>
+    ipcRenderer.invoke("streamer:resolve", platform, value),
   deleteStreamer: (id: string) => ipcRenderer.invoke("streamer:delete", id),
   retryStream: (id: string) => ipcRenderer.invoke("streamer:retry-open", id),
-  cancelReopen: (id: string) => ipcRenderer.invoke("streamer:cancel-reopen", id),
+  cancelReopen: (id: string) =>
+    ipcRenderer.invoke("streamer:cancel-reopen", id),
   saveSettings: (value: Partial<Settings>) =>
-    ipcRenderer.invoke("settings:save", value),
+    ipcRenderer.invoke("settings:save", {
+      patch: value,
+      revision: ++settingsRevision,
+    }),
   open: (url: string) => ipcRenderer.invoke("external:open", url),
   copy: (text: string) => ipcRenderer.invoke("clipboard:write", text),
   clearActivity: () => ipcRenderer.invoke("activity:clear"),

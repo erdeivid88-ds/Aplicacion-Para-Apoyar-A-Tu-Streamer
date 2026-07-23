@@ -88,6 +88,7 @@ export interface Settings {
   closeInternalBrowserWhenEmpty: boolean;
   theme: "light" | "dark" | "system";
   showStartNotice: boolean;
+  onboardingCompleted: boolean;
   platforms: Record<Platform, { enabled: boolean; clientId?: string }>;
 }
 export interface DeviceAuthPublic {
@@ -181,7 +182,7 @@ export const defaultRuntime = (): AutomationRuntime => ({
   paused: false,
 });
 export const defaults: AppState = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   settings: {
     scanMinutes: 15,
     idleMinutes: 10,
@@ -214,6 +215,7 @@ export const defaults: AppState = {
     closeInternalBrowserWhenEmpty: true,
     theme: "system",
     showStartNotice: true,
+    onboardingCompleted: false,
     platforms: { twitch: { enabled: false }, kick: { enabled: false } },
   },
   streamers: [],

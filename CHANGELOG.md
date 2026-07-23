@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0
+
+- Rediseña por completo la experiencia pública con navegación adaptable, tarjetas visuales y lenguaje natural.
+- Añade onboarding, gestión visual de streamers, secciones propias para Automatizaciones y Navegador, y cronología filtrable.
+- Sustituye Guardar/Descartar por guardado automático validado, con debounce, revisiones, estado y reintento.
+- Recupera la ayuda de `ids.vortexstudio.es` y resuelve automáticamente ID, login, nombre y avatar de Twitch mediante Helix.
+- Añade temas claro, oscuro y del sistema, foco visible, reducción de movimiento y layouts desde 760×560.
+- Migra configuraciones 1.0.x sin perder streamers, preferencias, automatizaciones ni tokens cifrados.
+
 ## 1.0.8
 
 - Añade registro, desregistro y diagnóstico completos del Native Messaging Host para Edge y Chrome en HKCU.

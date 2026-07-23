@@ -1,24 +1,37 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   defaultAutomation,
   type AppState,
   type Platform,
+  type Settings,
   type Streamer,
 } from "../domain/types";
+import { MONITOR_LABELS, validateSettings } from "../domain/settings-ui";
 import {
-  MONITOR_LABELS,
-  SETTINGS_CATEGORIES,
-  validateSettings,
-} from "../domain/settings-ui";
-const pages = [
-  "Inicio",
-  "Plataformas",
-  "Streamers",
-  "Ajustes",
-  "Actividad",
-  "Contacto",
+  Alert,
+  Card,
+  EmptyState,
+  PageHeader,
+  PlatformMark,
+  SaveStatus,
+  SettingRow,
+  StatusBadge,
+  Switch,
+  Tooltip,
+} from "./components";
+
+const navigation = [
+  ["Inicio", "⌂"],
+  ["Streamers", "♡"],
+  ["Plataformas", "◉"],
+  ["Automatizaciones", "✦"],
+  ["Navegador", "▣"],
+  ["Actividad", "◷"],
+  ["Ajustes", "⚙"],
 ] as const;
-type Page = (typeof pages)[number];
+type Page = (typeof navigation)[number][0];
+const IDS_URL = "https://ids.vortexstudio.es";
+
 export default function App() {
   const [state, setState] = useState<AppState>();
   const [page, setPage] = useState<Page>("Inicio");
@@ -26,888 +39,1071 @@ export default function App() {
     void window.api.state().then(setState);
     return window.api.onState(setState);
   }, []);
-  if (!state) return <main>Cargando…</main>;
+  useEffect(() => {
+    if (state) document.documentElement.dataset.theme = state.settings.theme;
+  }, [state?.settings.theme]);
+  if (!state)
+    return (
+      <div className="loading-shell" role="status">
+        <span className="loader" />
+        Preparando tu espacio…
+      </div>
+    );
   return (
-    <div className="shell">
-      <aside>
-        <h1>Apoya a tu Streamer</h1>
-        {pages.map((item) => (
-          <button
-            className={page === item ? "active" : ""}
-            onClick={() => setPage(item)}
-            key={item}
+    <div className="app-shell">
+      <Sidebar page={page} setPage={setPage} state={state} />
+      <main id="main-content" tabIndex={-1}>
+        <div className="topbar">
+          <StatusBadge
+            tone={
+              state.monitor.status === "active"
+                ? "success"
+                : state.monitor.status === "partial-error"
+                  ? "warning"
+                  : "neutral"
+            }
           >
-            {item}
-          </button>
-        ))}
-      </aside>
-      <main>
-        <header>
-          <b>{MONITOR_LABELS[state.monitor.status]}</b>
-        </header>
-        {page === "Inicio" && <Home state={state} />}{" "}
-        {page === "Plataformas" && <Platforms state={state} />}{" "}
+            {MONITOR_LABELS[state.monitor.status].replace(/^[^\p{L}]+/u, "")}
+          </StatusBadge>
+          <span className="topbar-brand">
+            Apoya a tu Streamer <small>1.1.0</small>
+          </span>
+        </div>
+        {page === "Inicio" && <Home state={state} go={setPage} />}{" "}
         {page === "Streamers" && <Streamers state={state} />}{" "}
-        {page === "Ajustes" && <Settings state={state} />}{" "}
+        {page === "Plataformas" && <Platforms state={state} />}{" "}
+        {page === "Automatizaciones" && <Automations state={state} />}{" "}
+        {page === "Navegador" && <Browser state={state} />}{" "}
         {page === "Actividad" && <Activity state={state} />}{" "}
-        {page === "Contacto" && <Contact />}
+        {page === "Ajustes" && <SettingsPage state={state} />}
         {state.monitor.toast && (
           <div className="toast" role="status">
             {state.monitor.toast}
           </div>
         )}
+        {!state.settings.onboardingCompleted && (
+          <Onboarding state={state} go={setPage} />
+        )}
       </main>
     </div>
   );
 }
-function Home({ state }: { state: AppState }) {
+
+function Sidebar({
+  page,
+  setPage,
+  state,
+}: {
+  page: Page;
+  setPage: (p: Page) => void;
+  state: AppState;
+}) {
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <span>♡</span>
+        <div>
+          Apoya a tu
+          <br />
+          <b>Streamer</b>
+        </div>
+      </div>
+      <nav aria-label="Navegación principal">
+        {navigation.map(([name, icon]) => (
+          <button
+            key={name}
+            className={page === name ? "active" : ""}
+            aria-current={page === name ? "page" : undefined}
+            title={name}
+            onClick={() => setPage(name)}
+          >
+            <span aria-hidden="true">{icon}</span>
+            <span>{name}</span>
+            {name === "Plataformas" && state.bot.status === "connected" && (
+              <i className="nav-dot success" />
+            )}
+            {name === "Navegador" && state.extension.connected && (
+              <i className="nav-dot success" />
+            )}
+            {name === "Actividad" &&
+              state.activity.some((x) => x.level === "error") && (
+                <i className="nav-dot error" />
+              )}
+          </button>
+        ))}
+      </nav>
+      <div className="sidebar-footer">
+        <span
+          className={`pulse ${state.monitor.status !== "off" ? "on" : ""}`}
+        />
+        {state.monitor.status === "off"
+          ? "Monitor apagado"
+          : "Monitor en marcha"}
+      </div>
+    </aside>
+  );
+}
+
+function Home({ state, go }: { state: AppState; go: (p: Page) => void }) {
+  const live = state.streamers.filter((x) => x.live);
+  const enabled = Object.values(state.settings.platforms).filter(
+    (x) => x.enabled,
+  ).length;
   return (
     <section>
-      <h2>Inicio</h2>
-      <div className="hero">
-        <p>Monitor legítimo con mensajería funcional autorizada.</p>
-        {state.monitor.status === "off" ? (
-          <button className="power" onClick={() => void window.api.start()}>
-            Encender monitor
-          </button>
-        ) : (
-          <button
-            className="danger"
-            disabled={state.monitor.status === "stopping"}
-            onClick={() => void window.api.stop()}
+      <PageHeader
+        title="Apoya a tus streamers"
+        description="Nos encargamos de comprobar tus canales y abrir cada directo como tú prefieras."
+        action={
+          state.monitor.status === "off" ? (
+            <button
+              className="button primary large"
+              onClick={() => void window.api.start()}
+            >
+              ▶ Encender monitor
+            </button>
+          ) : (
+            <button
+              className="button danger large"
+              disabled={state.monitor.status === "stopping"}
+              onClick={() => void window.api.stop()}
+            >
+              ■{" "}
+              {state.monitor.status === "stopping"
+                ? "Deteniendo…"
+                : "Apagar monitor"}
+            </button>
+          )
+        }
+      />
+      <div className="hero-card">
+        <div>
+          <StatusBadge
+            tone={state.monitor.status === "active" ? "success" : "info"}
           >
-            {state.monitor.status === "stopping"
-              ? "Deteniendo monitor…"
-              : "Apagar monitor"}
-          </button>
-        )}
-        <button onClick={() => void window.api.scan()}>Comprobar ahora</button>
+            {MONITOR_LABELS[state.monitor.status].replace(/^[^\p{L}]+/u, "")}
+          </StatusBadge>
+          <h3>
+            {live.length
+              ? `${live.length} ${live.length === 1 ? "streamer está" : "streamers están"} en directo`
+              : "Todo tranquilo por ahora"}
+          </h3>
+          <p>
+            La próxima comprobación se hará{" "}
+            {state.monitor.nextScan
+              ? relativeTime(state.monitor.nextScan)
+              : "cuando enciendas el monitor"}
+            .
+          </p>
+        </div>
+        <button
+          className="button subtle"
+          onClick={() => void window.api.scan()}
+        >
+          ↻ Comprobar ahora
+        </button>
       </div>
-      <div className="grid">
-        <Card value={state.streamers.length} label="Canales" />
-        <Card
-          value={state.streamers.filter((x) => x.live).length}
-          label="En directo"
+      <div className="summary-grid">
+        <Summary
+          icon="♡"
+          value={state.streamers.length}
+          label="Streamers añadidos"
         />
-        <Card
-          value={state.streamers.filter((x) => x.automation.enabled).length}
-          label="Automatizaciones"
-        />
-        <Card
+        <Summary icon="●" value={live.length} label="En directo ahora" />
+        <Summary icon="◉" value={enabled} label="Plataformas activas" />
+        <Summary
+          icon="◷"
           value={
-            state.monitor.lastScan
-              ? new Date(state.monitor.lastScan).toLocaleString()
+            state.monitor.nextScan
+              ? new Date(state.monitor.nextScan).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
               : "—"
           }
-          label="Último barrido"
+          label="Próxima comprobación"
         />
       </div>
+      <div className="section-heading">
+        <div>
+          <h3>En directo ahora</h3>
+          <p>Accesos rápidos a los canales que están emitiendo.</p>
+        </div>
+      </div>
+      {!live.length ? (
+        <EmptyState
+          icon="☕"
+          title="Ninguno de tus streamers está en directo"
+          description="Puedes comprobar de nuevo o relajarte: el monitor seguirá atento."
+          action={
+            <button className="button" onClick={() => void window.api.scan()}>
+              Comprobar ahora
+            </button>
+          }
+        />
+      ) : (
+        <div className="stream-grid">
+          {live.map((s) => (
+            <StreamerCard key={s.id} item={s} compact />
+          ))}
+        </div>
+      )}
+      <QuickAlerts state={state} go={go} />
     </section>
   );
 }
-function Card({ value, label }: { value: string | number; label: string }) {
+function Summary({
+  icon,
+  value,
+  label,
+}: {
+  icon: string;
+  value: string | number;
+  label: string;
+}) {
   return (
-    <article>
-      <b>{value}</b>
-      <span>{label}</span>
-    </article>
+    <Card className="summary">
+      <span aria-hidden="true">{icon}</span>
+      <div>
+        <b>{value}</b>
+        <small>{label}</small>
+      </div>
+    </Card>
   );
 }
-function Platforms({
+function QuickAlerts({
   state,
-  onClientId,
+  go,
 }: {
   state: AppState;
-  onClientId?: (value: string) => void;
+  go: (p: Page) => void;
 }) {
-  const twitch = state.settings.platforms.twitch;
-  const [selectedType, setSelectedType] = useState<"personal" | "bot">(
-    state.bot.accountType ?? "personal",
+  return (
+    <div className="alerts-stack">
+      {state.bot.status !== "connected" && (
+        <Alert
+          tone="warning"
+          title="Twitch no está conectado"
+          action={
+            <button onClick={() => go("Plataformas")}>Conectar Twitch</button>
+          }
+        >
+          Conecta una cuenta para comprobar canales de Twitch.
+        </Alert>
+      )}
+      {state.settings.browserMode === "extension" &&
+        !state.extension.connected && (
+          <Alert
+            tone="warning"
+            title="El conector del navegador no responde"
+            action={
+              <button onClick={() => go("Navegador")}>
+                Configurar extensión
+              </button>
+            }
+          >
+            Comprueba la extensión y el conector de Chrome o Edge.
+          </Alert>
+        )}
+      {state.monitor.errors[0] && (
+        <Alert
+          tone="error"
+          title="Hay una incidencia reciente"
+          action={
+            <button onClick={() => go("Actividad")}>Revisar error</button>
+          }
+        >
+          {state.monitor.errors[0]}
+        </Alert>
+      )}
+    </div>
   );
-  const connected = state.bot.status === "connected";
+}
+
+function Streamers({ state }: { state: AppState }) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("Todos");
+  const [wizard, setWizard] = useState(false);
+  const items = state.streamers.filter(
+    (s) =>
+      (!query ||
+        `${s.displayName} ${s.normalizedName}`
+          .toLowerCase()
+          .includes(query.toLowerCase())) &&
+      (filter === "Todos" ||
+        (filter === "En directo" && s.live) ||
+        (filter === "Desconectados" && !s.live) ||
+        filter === s.platform[0].toUpperCase() + s.platform.slice(1) ||
+        (filter === "Con errores" && s.lastError)),
+  );
   return (
     <section>
-      <h2>Plataformas</h2>
-      <div className="grid">
-        <article>
-          <h3>Cuenta de Twitch conectada</h3>
-          <p>
-            Estado OAuth:{" "}
-            <b>
-              {connected
-                ? state.bot.accountType === "personal"
-                  ? "Cuenta personal conectada"
-                  : "Cuenta bot conectada"
-                : state.bot.status}
-            </b>
-            {state.bot.displayName && ` · ${state.bot.displayName}`}
-          </p>
-          <p>
-            Tipo:{" "}
-            <b>
-              {state.bot.accountType === "bot"
-                ? "Bot"
-                : state.bot.accountType === "personal"
-                  ? "Personal"
-                  : "Sin seleccionar"}
-            </b>
-          </p>
-          {state.bot.avatarUrl && (
-            <img
-              className="avatar"
-              src={state.bot.avatarUrl}
-              alt={`Avatar de ${state.bot.displayName ?? "Twitch"}`}
+      <PageHeader
+        title="Tus streamers"
+        description="Añade canales, consulta su estado y decide cuáles quieres acompañar."
+        action={
+          <button className="button primary" onClick={() => setWizard(true)}>
+            ＋ Añadir streamer
+          </button>
+        }
+      />
+      <div className="toolbar">
+        <label className="search">
+          <span>⌕</span>
+          <input
+            aria-label="Buscar streamers"
+            placeholder="Buscar por nombre o login"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+        <div className="filter-pills" aria-label="Filtros">
+          {[
+            "Todos",
+            "En directo",
+            "Desconectados",
+            "Twitch",
+            "Kick",
+            "Con errores",
+          ].map((x) => (
+            <button
+              className={filter === x ? "active" : ""}
+              onClick={() => setFilter(x)}
+              key={x}
+            >
+              {x}
+            </button>
+          ))}
+        </div>
+      </div>
+      {!state.streamers.length ? (
+        <EmptyState
+          icon="♡"
+          title="Todavía no has añadido ningún streamer"
+          description="Añade tu primer canal en unos pasos sencillos."
+          action={
+            <button className="button primary" onClick={() => setWizard(true)}>
+              Añadir streamer
+            </button>
+          }
+        />
+      ) : !items.length ? (
+        <EmptyState
+          icon="⌕"
+          title="No hay coincidencias"
+          description="Prueba con otro nombre o filtro."
+        />
+      ) : (
+        <div className="stream-grid">
+          {items.map((item) => (
+            <StreamerCard key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+      {wizard && <StreamerWizard close={() => setWizard(false)} />}
+    </section>
+  );
+}
+function StreamerCard({
+  item,
+  compact = false,
+}: {
+  item: Streamer;
+  compact?: boolean;
+}) {
+  return (
+    <Card className="streamer-card">
+      <div className="streamer-head">
+        {item.avatar ? (
+          <img src={item.avatar} alt="" />
+        ) : (
+          <div className="avatar-fallback">
+            {item.displayName[0]?.toUpperCase()}
+          </div>
+        )}
+        <div>
+          <div className="name-line">
+            <h3>{item.displayName}</h3>
+            <PlatformMark platform={item.platform} />
+          </div>
+          <p>@{item.normalizedName}</p>
+        </div>
+        <StatusBadge
+          tone={item.lastError ? "error" : item.live ? "success" : "neutral"}
+        >
+          {item.lastError ? "Error" : item.live ? "En directo" : "Desconectado"}
+        </StatusBadge>
+      </div>
+      {item.live && (
+        <>
+          <p className="stream-title">{item.title || "Directo en curso"}</p>
+          <small>{item.category || "Sin categoría"}</small>
+        </>
+      )}
+      <div className="meta">
+        <span>Última comprobación</span>
+        <b>
+          {item.lastCheckedAt ? relativeTime(item.lastCheckedAt) : "Pendiente"}
+        </b>
+      </div>
+      <div className="card-actions">
+        <button onClick={() => void window.api.retryStream(item.id)}>
+          Abrir
+        </button>
+        {item.live && (
+          <button onClick={() => void window.api.muteExtensionTabs()}>
+            Silenciar
+          </button>
+        )}
+        <button onClick={() => void window.api.scan()}>Comprobar ahora</button>
+        {!compact && (
+          <>
+            <button
+              onClick={() =>
+                void window.api.saveStreamer({
+                  ...item,
+                  enabled: !item.enabled,
+                })
+              }
+            >
+              {item.enabled ? "Pausar" : "Reanudar"}
+            </button>
+            <button
+              className="icon-button danger-text"
+              aria-label={`Eliminar ${item.displayName}`}
+              onClick={() =>
+                confirm(`¿Eliminar ${item.displayName}?`) &&
+                void window.api.deleteStreamer(item.id)
+              }
+            >
+              Eliminar
+            </button>
+          </>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function StreamerWizard({ close }: { close: () => void }) {
+  const [step, setStep] = useState(1);
+  const [platform, setPlatform] = useState<Platform>("twitch");
+  const [input, setInput] = useState("");
+  const [manualId, setManualId] = useState("");
+  const [preview, setPreview] = useState<{
+    externalId: string;
+    login: string;
+    displayName: string;
+    avatar?: string;
+  }>();
+  const [error, setError] = useState("");
+  const verify = async () => {
+    setError("");
+    try {
+      const found = await window.api.resolveStreamer(platform, input);
+      setPreview({ ...found, externalId: found.externalId || manualId });
+      setStep(3);
+    } catch (e) {
+      if (manualId.trim()) {
+        const login =
+          input
+            .trim()
+            .replace(/^@/, "")
+            .split("/")
+            .filter(Boolean)
+            .at(-1)
+            ?.toLowerCase() ?? "";
+        setPreview({ externalId: manualId.trim(), login, displayName: login });
+        setStep(3);
+        return;
+      }
+      setError(
+        e instanceof Error ? e.message : "No pudimos verificar el canal",
+      );
+    }
+  };
+  const finish = async () => {
+    if (!preview) return;
+    await window.api.saveStreamer({
+      platform,
+      displayName: preview.displayName,
+      normalizedName: preview.login,
+      externalId: preview.externalId,
+      avatar: preview.avatar,
+      enabled: true,
+      live: false,
+      automation: defaultAutomation(),
+    });
+    close();
+  };
+  return (
+    <div className="backdrop" role="presentation">
+      <div
+        className="modal wizard"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wizard-title"
+      >
+        <div className="modal-head">
+          <div>
+            <small>Paso {step} de 3</small>
+            <h2 id="wizard-title">
+              {step === 1
+                ? "¿En qué plataforma está?"
+                : step === 2
+                  ? "Busca el canal"
+                  : "Confirma el streamer"}
+            </h2>
+          </div>
+          <button className="icon-button" aria-label="Cerrar" onClick={close}>
+            ×
+          </button>
+        </div>
+        <div className="progress">
+          <i style={{ width: `${(step / 3) * 100}%` }} />
+        </div>
+        {step === 1 && (
+          <div className="choice-grid">
+            <button
+              className={`choice ${platform === "twitch" ? "selected" : ""}`}
+              onClick={() => setPlatform("twitch")}
+            >
+              <PlatformMark platform="twitch" />
+              <b>Twitch</b>
+              <span>Canales y mensajería autorizada</span>
+            </button>
+            <button
+              className={`choice ${platform === "kick" ? "selected" : ""}`}
+              onClick={() => setPlatform("kick")}
+            >
+              <PlatformMark platform="kick" />
+              <b>Kick</b>
+              <span>Seguimiento de directos</span>
+            </button>
+          </div>
+        )}
+        {step === 2 && (
+          <>
+            <label className="field">
+              Nombre, URL o ID del canal
+              <input
+                autoFocus
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={
+                  platform === "twitch"
+                    ? "por ejemplo: ibai"
+                    : "por ejemplo: xqc"
+                }
+              />
+              <small>
+                Intentaremos encontrar el canal y completar sus datos.
+              </small>
+            </label>
+            {(platform === "kick" || error) && (
+              <label className="field">
+                ID del canal {platform === "twitch" ? "de Twitch" : "de Kick"}
+                <input
+                  value={manualId}
+                  onChange={(e) => setManualId(e.target.value)}
+                  placeholder="ID numérica"
+                />
+                <small>
+                  Kick necesita esta ID para consultar su API oficial.
+                </small>
+              </label>
+            )}
+            {error && (
+              <Alert tone="error" title="No pudimos verificar el canal">
+                {error}
+              </Alert>
+            )}
+            <IdHelp />
+          </>
+        )}
+        {step === 3 && preview && (
+          <Card className="preview">
+            <div className="streamer-head">
+              {preview.avatar ? (
+                <img src={preview.avatar} alt="" />
+              ) : (
+                <div className="avatar-fallback">{preview.displayName[0]}</div>
+              )}
+              <div>
+                <h3>{preview.displayName}</h3>
+                <p>@{preview.login}</p>
+                <small>
+                  ID del canal:{" "}
+                  {preview.externalId || "Añádela manualmente después"}
+                </small>
+              </div>
+            </div>
+          </Card>
+        )}
+        <div className="modal-actions">
+          {step > 1 && <button onClick={() => setStep(step - 1)}>Atrás</button>}
+          {step === 1 && (
+            <button className="primary" onClick={() => setStep(2)}>
+              Continuar
+            </button>
+          )}
+          {step === 2 && (
+            <button
+              className="primary"
+              disabled={
+                !input.trim() || (platform === "kick" && !manualId.trim())
+              }
+              onClick={() => void verify()}
+            >
+              Verificar canal
+            </button>
+          )}
+          {step === 3 && (
+            <button className="primary" onClick={() => void finish()}>
+              Añadir streamer
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+function IdHelp() {
+  return (
+    <div className="id-help">
+      <Tooltip text="La ID es el identificador numérico único del canal." />
+      <div>
+        <b>¿No sabes cuál es la ID?</b>
+        <p>Puedes obtenerla fácilmente en ids.vortexstudio.es.</p>
+      </div>
+      <button onClick={() => void window.api.open(IDS_URL)}>
+        ↗ Abrir herramienta de IDs
+      </button>
+    </div>
+  );
+}
+
+function Platforms({ state }: { state: AppState }) {
+  const twitch = state.settings.platforms.twitch;
+  const [clientId, setClientId] = useState(twitch.clientId ?? "");
+  const [accountType, setAccountType] = useState<"personal" | "bot">(
+    state.bot.accountType ?? "personal",
+  );
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (clientId !== (twitch.clientId ?? ""))
+        void window.api.saveSettings({
+          platforms: {
+            ...state.settings.platforms,
+            twitch: { ...twitch, clientId },
+          },
+        });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [clientId]);
+  return (
+    <section>
+      <PageHeader
+        title="Plataformas"
+        description="Conecta tus cuentas y elige qué servicios quieres comprobar."
+      />
+      <div className="platform-grid">
+        <Card className="platform-card twitch-card">
+          <div className="platform-title">
+            <PlatformMark platform="twitch" />
+            <div>
+              <h3>Twitch</h3>
+              <p>Directos y mensajes autorizados</p>
+            </div>
+            <StatusBadge
+              tone={
+                state.bot.status === "connected"
+                  ? "success"
+                  : state.bot.status === "expired"
+                    ? "warning"
+                    : "neutral"
+              }
+            >
+              {botLabel(state.bot.status)}
+            </StatusBadge>
+          </div>
+          {state.bot.status === "connected" && (
+            <div className="account">
+              <img src={state.bot.avatarUrl} alt="" />
+              <div>
+                <b>{state.bot.displayName}</b>
+                <span>
+                  Cuenta {state.bot.accountType === "bot" ? "Bot" : "Personal"}
+                </span>
+              </div>
+            </div>
+          )}
+          <SettingRow
+            title="Habilitar Twitch"
+            description="Incluye tus canales de Twitch en cada comprobación."
+          >
+            <Switch
+              label="Habilitar Twitch"
+              checked={twitch.enabled}
+              onChange={(enabled) =>
+                void window.api.saveSettings({
+                  platforms: {
+                    ...state.settings.platforms,
+                    twitch: { ...twitch, enabled },
+                  },
+                })
+              }
             />
-          )}
-          {state.bot.scopes && (
-            <p>
-              <small>Scopes concedidos: {state.bot.scopes.join(", ")}</small>
-            </p>
-          )}
-          {state.bot.detail && (
-            <small className="error">{state.bot.detail}</small>
-          )}
-          <label>
+          </SettingRow>
+          <label className="field">
             Client ID público
             <input
-              value={twitch.clientId ?? ""}
-              maxLength={80}
-              onChange={(event) =>
-                onClientId
-                  ? onClientId(event.target.value)
-                  : void window.api.saveSettings({
-                      platforms: {
-                        ...state.settings.platforms,
-                        twitch: { ...twitch, clientId: event.target.value },
-                      },
-                    })
-              }
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="Pega aquí el Client ID"
             />
+            <small>No necesitas un Client Secret.</small>
           </label>
-          <p>
-            <strong>Cliente público</strong>
-          </p>
-          <small>
-            Esta aplicación de escritorio utiliza un cliente público de Twitch.
-            No necesita Client Secret.
-          </small>
-          <ol>
-            <li>Abre Twitch Developer Console.</li>
-            <li>Crea o administra una aplicación.</li>
-            <li>Selecciona el tipo de cliente Público.</li>
-            <li>Copia el Client ID.</li>
-            <li>Pégalo aquí.</li>
-            <li>Pulsa Conectar cuenta.</li>
-          </ol>
-          <p>
-            <small>
-              La cuenta personal enviará con su nombre real de Twitch. La cuenta
-              bot enviará desde una cuenta separada. No se pueden conectar ambas
-              simultáneamente en el mismo perfil local.
-            </small>
-          </p>
-          <label>
-            ¿Qué cuenta quieres conectar?
+          <label className="field">
+            Cuenta que enviará mensajes
             <select
-              value={selectedType}
-              onChange={(event) =>
-                setSelectedType(event.target.value as "personal" | "bot")
+              value={accountType}
+              disabled={state.bot.status === "connected"}
+              onChange={(e) =>
+                setAccountType(e.target.value as typeof accountType)
               }
-              disabled={connected}
             >
               <option value="personal">Mi cuenta personal</option>
               <option value="bot">Una cuenta bot</option>
             </select>
           </label>
-          <p>
-            <small>
-              {selectedType === "personal"
-                ? "Scope solicitado: user:write:chat."
-                : "Scopes solicitados: user:write:chat y user:bot."}
-            </small>
-          </p>
-          <p>
-            Cuenta que enviará el próximo mensaje:{" "}
-            <b>{connected ? state.bot.displayName : "ninguna"}</b>
-          </p>
-          <div className="actions">
+          <div className="card-actions">
             <button
               className="primary"
-              onClick={() => void window.api.connectTwitch(selectedType)}
+              onClick={() => void window.api.connectTwitch(accountType)}
             >
               Conectar cuenta
             </button>
-            <button onClick={() => void window.api.disconnectBot()}>
-              Desconectar
-            </button>
-            <button
-              onClick={() => {
-                const next = selectedType === "personal" ? "bot" : "personal";
-                setSelectedType(next);
-                void window.api.switchTwitchType(next);
-              }}
-            >
-              Cambiar tipo de cuenta
-            </button>
             <button onClick={() => void window.api.checkTwitchPermissions()}>
-              Comprobar permisos
+              Comprobar conexión
             </button>
-            <button
-              onClick={() =>
+            {state.bot.status === "connected" && (
+              <button
+                className="danger-text"
+                onClick={() =>
+                  confirm("¿Desconectar la cuenta de Twitch?") &&
+                  void window.api.disconnectBot()
+                }
+              >
+                Desconectar
+              </button>
+            )}
+          </div>
+          {state.bot.detail && (
+            <Alert tone="error" title="Twitch necesita atención">
+              {state.bot.detail}
+            </Alert>
+          )}
+        </Card>
+        <Card className="platform-card kick-card">
+          <div className="platform-title">
+            <PlatformMark platform="kick" />
+            <div>
+              <h3>Kick</h3>
+              <p>Seguimiento de directos</p>
+            </div>
+            <StatusBadge
+              tone={
+                state.settings.platforms.kick.enabled ? "success" : "neutral"
+              }
+            >
+              {state.settings.platforms.kick.enabled
+                ? "Habilitado"
+                : "Deshabilitado"}
+            </StatusBadge>
+          </div>
+          <p className="feature-note">
+            Puedes comprobar el estado de canales con la API oficial. La
+            mensajería automática no está disponible actualmente.
+          </p>
+          <SettingRow
+            title="Habilitar Kick"
+            description="Incluye tus canales de Kick en cada comprobación."
+          >
+            <Switch
+              label="Habilitar Kick"
+              checked={state.settings.platforms.kick.enabled}
+              onChange={(enabled) =>
                 void window.api.saveSettings({
                   platforms: {
                     ...state.settings.platforms,
-                    twitch: { ...twitch, enabled: !twitch.enabled },
+                    kick: { ...state.settings.platforms.kick, enabled },
                   },
                 })
               }
-            >
-              {twitch.enabled ? "Deshabilitar monitor" : "Habilitar monitor"}
-            </button>
-          </div>
-          {state.deviceAuth.status !== "idle" &&
-            state.deviceAuth.status !== "success" && (
-              <div className="device-flow">
-                <h4>Autorización del dispositivo</h4>
-                <p>
-                  Estado: <b>{state.deviceAuth.status}</b>
-                </p>
-                {state.deviceAuth.userCode && (
-                  <>
-                    <p>
-                      Código: <code>{state.deviceAuth.userCode}</code>
-                    </p>
-                    <button
-                      onClick={() =>
-                        void window.api.copy(state.deviceAuth.userCode!)
-                      }
-                    >
-                      Copiar código
-                    </button>
-                  </>
-                )}
-                {state.deviceAuth.verificationUri && (
-                  <button onClick={() => void window.api.openTwitchDevice()}>
-                    Abrir Twitch para autorizar
-                  </button>
-                )}{" "}
-                {state.deviceAuth.expiresAt && (
-                  <p>
-                    Caduca:{" "}
-                    {new Date(state.deviceAuth.expiresAt).toLocaleTimeString()}
-                  </p>
-                )}{" "}
-                {state.deviceAuth.detail && (
-                  <p className="error">{state.deviceAuth.detail}</p>
-                )}
-                <button
-                  className="danger"
-                  onClick={() => void window.api.cancelTwitchConnect()}
-                >
-                  Cancelar conexión
-                </button>
-              </div>
-            )}
-        </article>
-        <article>
-          <h3>Kick</h3>
-          <p>
-            Mensajería automática no disponible para Kick mediante la API
-            oficial actual.
-          </p>
-          <small>
-            No se usa DOM, Playwright, scraping, pulsaciones ni cookies.
-          </small>
-        </article>
+            />
+          </SettingRow>
+          <IdHelp />
+        </Card>
       </div>
     </section>
   );
 }
-function Streamers({ state }: { state: AppState }) {
-  const [form, setForm] = useState<Partial<Streamer>>({
-    platform: "twitch",
-    enabled: true,
-    automation: defaultAutomation(),
-  });
-  const automation = form.automation ?? defaultAutomation();
-  async function save() {
-    await window.api.saveStreamer(form);
-    setForm({
-      platform: "twitch",
-      enabled: true,
-      automation: defaultAutomation(),
-    });
-  }
+
+function Automations({ state }: { state: AppState }) {
   return (
     <section>
-      <h2>Streamers</h2>
-      <article>
-        <h3>{form.id ? "Editar" : "Añadir"} streamer</h3>
-        <div className="form">
-          <label>
-            Plataforma
-            <select
-              value={form.platform}
-              onChange={(event) =>
-                setForm({ ...form, platform: event.target.value as Platform })
-              }
-            >
-              <option value="twitch">Twitch</option>
-              <option value="kick">Kick</option>
-            </select>
-          </label>
-          <label>
-            Nombre exacto
-            <input
-              maxLength={60}
-              value={form.displayName ?? ""}
-              onChange={(event) =>
-                setForm({ ...form, displayName: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            ID del broadcaster
-            <input
-              maxLength={64}
-              value={form.externalId ?? ""}
-              onChange={(event) =>
-                setForm({ ...form, externalId: event.target.value })
-              }
-            />
-          </label>
+      <PageHeader
+        title="Automatizaciones"
+        description="Configura mensajes responsables y autorizados para cada canal."
+      />
+      {!state.streamers.length ? (
+        <EmptyState
+          icon="✦"
+          title="Primero añade un streamer"
+          description="Después podrás configurar aquí sus mensajes."
+        />
+      ) : (
+        <div className="automation-list">
+          {state.streamers.map((s) => (
+            <Card key={s.id} className="automation-card">
+              <div className="automation-title">
+                <div>
+                  <h3>{s.displayName}</h3>
+                  <p>
+                    {s.platform === "twitch"
+                      ? `Enviará ${state.bot.displayName ?? "la cuenta conectada"}`
+                      : "Mensajería no disponible en Kick"}
+                  </p>
+                </div>
+                <Switch
+                  label={`Automatización de ${s.displayName}`}
+                  checked={s.automation.enabled}
+                  onChange={(enabled) =>
+                    void window.api.saveStreamer({
+                      ...s,
+                      automation: { ...s.automation, enabled },
+                    })
+                  }
+                />
+              </div>
+              {s.platform === "twitch" && (
+                <>
+                  <SettingRow
+                    title="Mensaje"
+                    description="El texto que se enviará mientras el directo esté activo."
+                  >
+                    <input
+                      maxLength={500}
+                      defaultValue={s.automation.message}
+                      onBlur={(e) =>
+                        void window.api.saveStreamer({
+                          ...s,
+                          automation: {
+                            ...s.automation,
+                            message: e.target.value,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    title="Repetir mensaje"
+                    description="Vuelve a enviarlo mientras el directo continúe."
+                  >
+                    <Switch
+                      label="Repetir mensaje"
+                      checked={s.automation.repeat}
+                      onChange={(repeat) =>
+                        void window.api.saveStreamer({
+                          ...s,
+                          automation: { ...s.automation, repeat },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                  <div className="two-cols">
+                    <SettingRow
+                      title="Intervalo"
+                      description="Espera mínima entre mensajes."
+                    >
+                      <select
+                        value={s.automation.intervalMinutes}
+                        onChange={(e) =>
+                          void window.api.saveStreamer({
+                            ...s,
+                            automation: {
+                              ...s.automation,
+                              intervalMinutes: +e.target.value,
+                            },
+                          })
+                        }
+                      >
+                        <option value="15">15 minutos</option>
+                        <option value="30">30 minutos</option>
+                        <option value="60">1 hora</option>
+                      </select>
+                    </SettingRow>
+                    <SettingRow
+                      title="Máximo por directo"
+                      description="Evita enviar demasiados mensajes."
+                    >
+                      <input
+                        type="number"
+                        min="1"
+                        max="5"
+                        value={s.automation.maxPerStream}
+                        onChange={(e) =>
+                          void window.api.saveStreamer({
+                            ...s,
+                            automation: {
+                              ...s.automation,
+                              maxPerStream: +e.target.value,
+                            },
+                          })
+                        }
+                      />
+                    </SettingRow>
+                  </div>
+                  <small className="muted">
+                    Enviados en este directo: {s.automationRuntime.sentCount} ·{" "}
+                    {s.automationRuntime.paused ? "En pausa" : "Preparado"}
+                  </small>
+                </>
+              )}
+            </Card>
+          ))}
         </div>
-        <h4>Mensajería automática autorizada</h4>
-        {form.platform === "kick" && (
-          <p className="warning">
-            Mensajería automática no disponible para Kick mediante la API
-            oficial actual.
-          </p>
-        )}
-        <div className="form">
-          <Check
-            label="Habilitada"
-            checked={automation.enabled}
-            set={(enabled) =>
-              setForm({ ...form, automation: { ...automation, enabled } })
-            }
-          />
-          <Check
-            label="Autorización confirmada por el propietario"
-            checked={automation.authorized}
-            set={(authorized) =>
-              setForm({ ...form, automation: { ...automation, authorized } })
-            }
-          />
-          <Check
-            label="Enviar al comenzar"
-            checked={automation.sendOnStart}
-            set={(sendOnStart) =>
-              setForm({ ...form, automation: { ...automation, sendOnStart } })
-            }
-          />
-          <Check
-            label="Repetir"
-            checked={automation.repeat}
-            set={(repeat) =>
-              setForm({ ...form, automation: { ...automation, repeat } })
-            }
-          />
-          <label>
-            Intervalo (mín. 15 min)
-            <input
-              type="number"
-              min="15"
-              value={automation.intervalMinutes}
-              onChange={(event) =>
-                setForm({
-                  ...form,
-                  automation: {
-                    ...automation,
-                    intervalMinutes: Math.max(15, +event.target.value),
-                  },
-                })
-              }
-            />
-          </label>
-          <label>
-            Máximo (1–5)
-            <input
-              type="number"
-              min="1"
-              max="5"
-              value={automation.maxPerStream}
-              onChange={(event) =>
-                setForm({
-                  ...form,
-                  automation: {
-                    ...automation,
-                    maxPerStream: Math.min(5, Math.max(1, +event.target.value)),
-                  },
-                })
-              }
-            />
-          </label>
-          <label>
-            Mensaje (máx. 500)
-            <input
-              maxLength={500}
-              value={automation.message}
-              onChange={(event) =>
-                setForm({
-                  ...form,
-                  automation: { ...automation, message: event.target.value },
-                })
-              }
-            />
-          </label>
-          <button className="primary" onClick={() => void save()}>
-            Guardar
-          </button>
-        </div>
-        {form.automation?.authorizedAt && (
-          <small>
-            Autorizado:{" "}
-            {new Date(form.automation.authorizedAt).toLocaleString()}
-          </small>
-        )}
-      </article>
-      <div className="list">
-        {state.streamers.map((item) => (
-          <article key={item.id}>
-            <div>
-              <b>{item.displayName}</b>
-              <span>
-                {item.platform} · {item.live ? "En directo" : "Desconectado"} ·
-                mensajería {item.automation.enabled ? "activa" : "inactiva"}
-              </span>
-              <small>
-                Autorización:{" "}
-                {item.automation.authorizedAt
-                  ? new Date(item.automation.authorizedAt).toLocaleString()
-                  : "no confirmada"}{" "}
-                · enviados: {item.automationRuntime.sentCount}
-              </small>
-            </div>
-            <div className="actions">
-              <button onClick={() => void window.api.retryStream(item.id)}>
-                Reintentar apertura
-              </button>
-              <button onClick={() => void window.api.cancelReopen(item.id)}>
-                Cancelar reapertura
-              </button>
-              <button onClick={() => setForm(item)}>Editar</button>
-              <button
-                className="danger"
-                onClick={() =>
-                  confirm(`¿Eliminar ${item.displayName}?`) &&
-                  void window.api.deleteStreamer(item.id)
-                }
-              >
-                Eliminar
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
+      )}
     </section>
   );
 }
-function Check({
-  label,
-  checked,
-  set,
-}: {
-  label: string;
-  checked: boolean;
-  set: (value: boolean) => void;
-}) {
+
+function Browser({ state }: { state: AppState }) {
+  const [result, setResult] = useState("");
+  const modes = [
+    {
+      id: "default" as const,
+      icon: "↗",
+      title: "Navegador predeterminado",
+      description: "Abre el directo en el navegador habitual del sistema.",
+      features: [
+        "Fácil y sin instalación adicional",
+        "No puede silenciar ni cerrar pestañas",
+      ],
+    },
+    {
+      id: "extension" as const,
+      icon: "◫",
+      title: "Navegador con extensión",
+      description:
+        "Abre una pestaña real en Chrome o Edge que la aplicación puede controlar.",
+      features: [
+        "Silenciado y cierre automático",
+        "Detecta cierres y puede reabrir",
+        "Requiere extensión y conector",
+      ],
+    },
+    {
+      id: "managed" as const,
+      icon: "▣",
+      title: "Navegador interno",
+      description:
+        "Abre todos los directos en una única ventana de la aplicación con pestañas.",
+      features: [
+        "Una sola ventana, varias pestañas",
+        "Silenciado y cierre automático",
+        "No requiere extensión",
+      ],
+    },
+  ];
   return (
-    <label className="check">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => set(event.target.checked)}
+    <section>
+      <PageHeader
+        title="Cómo abrir los directos"
+        description="Elige la experiencia que mejor encaja contigo."
       />
-      {label}
-    </label>
-  );
-}
-function Settings({ state }: { state: AppState }) {
-  const categories = SETTINGS_CATEGORIES;
-  const [category, setCategory] =
-    useState<(typeof categories)[number]>("General");
-  const [draft, setDraft] = useState(state.settings);
-  const [saved, setSaved] = useState(state.settings);
-  const [extensionCheck, setExtensionCheck] = useState("");
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
-  const errors = validateSettings(draft);
-  const update = <K extends keyof typeof draft>(
-    key: K,
-    value: (typeof draft)[K],
-  ) => setDraft({ ...draft, [key]: value });
-  async function save() {
-    if (errors.length) return;
-    await window.api.saveSettings(draft);
-    setSaved(draft);
-  }
-  function changeCategory(next: (typeof categories)[number]) {
-    if (dirty && !confirm("Hay cambios sin guardar. ¿Cambiar de sección?"))
-      return;
-    setCategory(next);
-  }
-  return (
-    <section className="settings-page">
-      <h2>Ajustes</h2>
-      <nav className="settings-tabs" aria-label="Categorías de ajustes">
-        {categories.map((item) => (
+      <div className="browser-modes">
+        {modes.map((mode) => (
           <button
-            key={item}
-            className={category === item ? "active" : ""}
-            onClick={() => changeCategory(item)}
+            className={`mode-card ${state.settings.browserMode === mode.id ? "selected" : ""}`}
+            key={mode.id}
+            onClick={() =>
+              void window.api.saveSettings({ browserMode: mode.id })
+            }
           >
-            {item}
+            <span className="mode-icon">{mode.icon}</span>
+            <StatusBadge
+              tone={
+                state.settings.browserMode === mode.id ? "success" : "neutral"
+              }
+            >
+              {state.settings.browserMode === mode.id
+                ? "Seleccionado"
+                : "Disponible"}
+            </StatusBadge>
+            <h3>{mode.title}</h3>
+            <p>{mode.description}</p>
+            <ul>
+              {mode.features.map((x) => (
+                <li key={x}>✓ {x}</li>
+              ))}
+            </ul>
           </button>
         ))}
-      </nav>
-      {dirty && <p className="warning">Cambios sin guardar</p>}
-      {errors.map((error) => (
-        <p className="error" key={error}>
-          {error}
-        </p>
-      ))}
-      <article className="settings-card">
-        {category === "General" && (
-          <div className="settings-grid">
-            <label>
-              Tema
-              <select
-                value={draft.theme}
-                onChange={(e) =>
-                  update("theme", e.target.value as typeof draft.theme)
-                }
-              >
-                <option value="system">Sistema</option>
-                <option value="light">Claro</option>
-                <option value="dark">Oscuro</option>
-              </select>
-            </label>
-            <label>
-              Idioma
-              <select value={draft.language} disabled>
-                <option value="es">Español</option>
-              </select>
-            </label>
-            <Check
-              label="Iniciar con Windows"
-              checked={draft.startup}
-              set={(v) => update("startup", v)}
-            />
-            <Check
-              label="Iniciar minimizada"
-              checked={draft.startMinimized}
-              set={(v) => update("startMinimized", v)}
-            />
-            <Check
-              label="Minimizar a la bandeja"
-              checked={draft.minimizeToTray}
-              set={(v) => update("minimizeToTray", v)}
-            />
-          </div>
-        )}
-        {category === "Monitor" && (
-          <div className="settings-grid">
-            <label>
-              Intervalo de barrido
-              <input
-                type="number"
-                min="5"
-                value={draft.scanMinutes}
-                onChange={(e) => update("scanMinutes", +e.target.value)}
-              />
-              <small>Mínimo 5 minutos.</small>
-            </label>
-            <label>
-              Minutos de inactividad
-              <input
-                type="number"
-                min="0"
-                value={draft.idleMinutes}
-                onChange={(e) => update("idleMinutes", +e.target.value)}
-              />
-            </label>
-            <label>
-              Cuenta atrás (segundos)
-              <input
-                type="number"
-                min="5"
-                value={draft.countdownSeconds}
-                onChange={(e) => update("countdownSeconds", +e.target.value)}
-              />
-            </label>
-            <Check
-              label="Encendido automático por inactividad"
-              checked={draft.autoStart}
-              set={(v) => update("autoStart", v)}
-            />
-            <Check
-              label="Permitir que el encendido automático reactive el monitor después de apagarlo manualmente"
-              checked={draft.allowAutoReactivateAfterManualStop}
-              set={(v) => update("allowAutoReactivateAfterManualStop", v)}
-            />
+      </div>
+      {state.settings.browserMode === "extension" && (
+        <Card className="connector-card">
+          <div>
+            <h3>Extensión y conector del navegador</h3>
             <p>
-              Último barrido: {state.monitor.lastScan ?? "—"}
-              <br />
-              Próximo: {state.monitor.nextScan ?? "—"}
-            </p>
-            <div className="actions">
-              <button onClick={() => void window.api.start()}>Encender</button>
-              <button className="danger" onClick={() => void window.api.stop()}>
-                Apagar
-              </button>
-              {state.monitor.status === "stopping" && (
-                <button
-                  className="danger"
-                  onClick={() => void window.api.forceStop()}
-                >
-                  Forzar detención
-                </button>
-              )}
-              <button onClick={() => void window.api.scan()}>
-                Barrido ahora
-              </button>
-            </div>
-          </div>
-        )}
-        {category === "Navegador" && (
-          <div className="settings-grid">
-            <label>
-              Modo
-              <select
-                value={draft.browserMode}
-                onChange={(e) =>
-                  update(
-                    "browserMode",
-                    e.target.value as typeof draft.browserMode,
-                  )
-                }
-              >
-                <option value="default">Navegador predeterminado</option>
-                <option value="extension">
-                  Navegador predeterminado con extensión
-                </option>
-                <option value="managed">
-                  Navegador interno de la aplicación
-                </option>
-              </select>
-              <small>
-                El navegador externo no puede silenciarse ni cerrarse desde la
-                aplicación.
-              </small>
-            </label>
-            <Check
-              label="Cerrar ventanas internas al terminar"
-              checked={draft.closeManagedTabs}
-              set={(v) => update("closeManagedTabs", v)}
-            />
-            <Check
-              label="Silenciar pestañas administradas"
-              checked={draft.muteManagedStreams}
-              set={(v) => update("muteManagedStreams", v)}
-            />
-            <Check
-              label="Abrir en segundo plano"
-              checked={draft.openStreamsInBackground}
-              set={(v) => update("openStreamsInBackground", v)}
-            />
-            <Check
-              label="Enfocar pestaña al abrir"
-              checked={draft.focusStreamOnOpen}
-              set={(v) => update("focusStreamOnOpen", v)}
-            />
-            <Check
-              label="Cerrar pestaña al terminar"
-              checked={draft.closeExtensionTabsOnEnd}
-              set={(v) => update("closeExtensionTabsOnEnd", v)}
-            />
-            <Check
-              label="Cerrar pestañas al apagar monitor"
-              checked={draft.closeExtensionTabsOnMonitorStop}
-              set={(v) => update("closeExtensionTabsOnMonitorStop", v)}
-            />
-            <Check
-              label="Cerrar pestañas al cerrar aplicación"
-              checked={draft.closeExtensionTabsOnAppClose}
-              set={(v) => update("closeExtensionTabsOnAppClose", v)}
-            />
-            <Check
-              label="Cerrar ventanas internas al apagar el monitor"
-              checked={draft.closeInternalWindowsOnMonitorStop}
-              set={(v) => update("closeInternalWindowsOnMonitorStop", v)}
-            />
-            <Check
-              label="Usar navegador predeterminado si la extensión no está disponible"
-              checked={draft.extensionFallback}
-              set={(v) => update("extensionFallback", v)}
-            />
-            <Check
-              label="Volver a abrir una pestaña si se cierra mientras el directo continúa"
-              checked={draft.reopenClosedStreams}
-              set={(v) => update("reopenClosedStreams", v)}
-            />
-            <label>
-              Tiempo antes de reabrir (3–60 segundos)
-              <input
-                type="number"
-                min="3"
-                max="60"
-                value={draft.reopenDelaySeconds}
-                onChange={(e) =>
-                  update(
-                    "reopenDelaySeconds",
-                    Math.min(60, Math.max(3, +e.target.value)),
-                  )
-                }
-              />
-            </label>
-            <label>
-              Máximo de reaperturas por directo (1–10)
-              <input
-                type="number"
-                min="1"
-                max="10"
-                value={draft.maxReopensPerStream}
-                onChange={(e) =>
-                  update(
-                    "maxReopensPerStream",
-                    Math.min(10, Math.max(1, +e.target.value)),
-                  )
-                }
-              />
-            </label>
-            <Check
-              label="Preguntar antes de volver a abrir una pestaña cerrada"
-              checked={draft.askBeforeReopen}
-              set={(v) => update("askBeforeReopen", v)}
-            />
-            <Check
-              label="Silenciar las demás pestañas al activar sonido en una"
-              checked={draft.muteOtherInternalTabs}
-              set={(v) => update("muteOtherInternalTabs", v)}
-            />
-            <Check
-              label="Cerrar navegador interno cuando no queden directos"
-              checked={draft.closeInternalBrowserWhenEmpty}
-              set={(v) => update("closeInternalBrowserWhenEmpty", v)}
-            />
-            {draft.browserMode === "default" && (
-              <p className="warning">
-                No es posible detectar ni reabrir automáticamente una pestaña
-                cerrada sin utilizar la extensión del navegador.
-              </p>
-            )}
-            <p>
-              Las ventanas gestionadas se silencian antes y después de navegar,
-              se reutilizan y enfocan sin duplicados.
+              {state.extension.connected
+                ? "Todo está preparado para controlar pestañas."
+                : "Comprueba que la extensión y el conector estén instalados."}
             </p>
           </div>
-        )}
-        {category === "Extensión" && (
-          <div className="settings-grid">
-            <h3>Extensión del navegador</h3>
-            <p>
-              Estado:{" "}
-              <b>
-                {state.extension.connected
-                  ? "Aplicación conectada"
-                  : "Aplicación desconectada"}
-              </b>
-            </p>
-            <p>
-              Native Messaging:{" "}
-              {state.extension.nativeHostConnected
-                ? "conectado"
-                : "desconectado"}
-              <br />
-              Navegador: {state.extension.browser ?? "—"}
-              <br />
-              Versión: {state.extension.extensionVersion ?? "—"}
-              <br />
-              Protocolo: {state.extension.protocolVersion}
-              <br />
-              Sesión activa: {state.extension.sessionActive ? "sí" : "no"}
-              <br />
-              Último heartbeat: {state.extension.lastHeartbeat ?? "—"}
-              <br />
-              Pestañas administradas: {state.extension.managedTabs}
-            </p>
-            {state.extension.lastError && (
-              <p className="error">{state.extension.lastError}</p>
-            )}
-            <p>
-              La extensión controla únicamente las pestañas que abre para esta
-              aplicación mientras la aplicación está conectada.
-            </p>
+          <StatusBadge tone={state.extension.connected ? "success" : "warning"}>
+            {state.extension.connected
+              ? "Extensión conectada"
+              : state.extension.nativeHostConnected
+                ? "Aplicación desconectada"
+                : "Conector no registrado"}
+          </StatusBadge>
+          <div className="card-actions">
             <button
+              className="primary"
               onClick={async () => {
-                setExtensionCheck("Comprobando…");
+                setResult("Comprobando…");
                 try {
-                  await Promise.race([
-                    window.api.checkExtension(),
-                    new Promise((_, reject) =>
-                      setTimeout(
-                        () => reject(new Error("Tiempo de espera agotado")),
-                        5000,
-                      ),
-                    ),
-                  ]);
-                  setExtensionCheck("Extensión conectada");
-                } catch (error) {
-                  const text =
-                    error instanceof Error ? error.message : String(error);
-                  setExtensionCheck(
-                    /not found|no registrado|disponible/i.test(text)
-                      ? "El Native Messaging Host no está registrado para Microsoft Edge."
-                      : /unauthorized|autorizado/i.test(text)
-                        ? "ID de extensión no autorizado"
-                        : /timeout|espera/i.test(text)
-                          ? "Tiempo de espera agotado"
-                          : /executable|ejecutable/i.test(text)
-                            ? "Host no ejecutable"
-                            : "Extensión no instalada",
+                  await window.api.checkExtension();
+                  setResult("Extensión conectada");
+                } catch {
+                  setResult(
+                    "No se pudo conectar. Ejecuta el diagnóstico del conector.",
                   );
                 }
               }}
             >
               Comprobar conexión
             </button>
-            {extensionCheck && <p>{extensionCheck}</p>}
-            <button onClick={() => void window.api.testExtension()}>
-              Probar apertura
-            </button>
-            <button onClick={() => void window.api.muteExtensionTabs()}>
-              Silenciar pestañas administradas
-            </button>
-            <button onClick={() => void window.api.closeExtensionTabs()}>
-              Cerrar pestañas administradas
-            </button>
             <button
-              onClick={() => void window.api.open("https://www.twitch.tv/")}
+              onClick={() =>
+                void window.api.open(
+                  "https://github.com/erdeivid88-ds/Aplicacion-Para-Apoyar-A-Tu-Streamer#instalar-la-extensión-y-native-messaging",
+                )
+              }
             >
-              Abrir instrucciones
+              Ver instrucciones
             </button>
             <button
               onClick={() =>
                 void window.api.copy(
                   JSON.stringify(
                     {
-                      connected: state.extension.connected,
-                      nativeHost: state.extension.nativeHostConnected,
+                      extension: state.extension.connected,
+                      connector: state.extension.nativeHostConnected,
                       browser: state.extension.browser,
-                      version: state.extension.extensionVersion,
                       protocol: state.extension.protocolVersion,
-                      managedTabs: state.extension.managedTabs,
-                      lastError: state.extension.lastError,
                     },
                     null,
                     2,
@@ -918,176 +1114,548 @@ function Settings({ state }: { state: AppState }) {
               Copiar diagnóstico
             </button>
           </div>
-        )}
-        {category === "Twitch" && (
-          <Platforms
-            state={{ ...state, settings: draft }}
-            onClientId={(value) =>
-              setDraft({
-                ...draft,
-                platforms: {
-                  ...draft.platforms,
-                  twitch: { ...draft.platforms.twitch, clientId: value },
-                },
-              })
-            }
-          />
-        )}
-        {category === "Mensajes" && (
-          <p>
-            La mensajería se configura por canal en Streamers: desactivada por
-            defecto, intervalo mínimo 15 minutos, máximo 5 por directo y pausa
-            tras tres errores.
-          </p>
-        )}
-        {category === "Notificaciones" && (
-          <Check
-            label="Activar notificaciones de directos, monitor, OAuth y mensajes"
-            checked={draft.notifications}
-            set={(v) => update("notifications", v)}
-          />
-        )}
-        {category === "Datos y privacidad" && (
-          <div>
-            <p>Los tokens se cifran con safeStorage y nunca se exportan.</p>
-            <div className="actions">
-              <button onClick={() => void window.api.exportData()}>
-                Exportar configuración
-              </button>
-              <button onClick={() => void window.api.importData()}>
-                Importar configuración
-              </button>
-              <button onClick={() => void window.api.disconnectBot()}>
-                Cerrar sesión de Twitch
-              </button>
-              <button
-                className="danger"
-                onClick={() =>
-                  confirm("¿Limpiar historial?") &&
-                  void window.api.clearActivity()
-                }
-              >
-                Limpiar historial
-              </button>
-            </div>
-          </div>
-        )}
-        {category === "Diagnóstico" && (
-          <div>
-            <pre>
-              {JSON.stringify(
-                {
-                  version: "1.0.8",
-                  platform: navigator.platform,
-                  monitor: MONITOR_LABELS[state.monitor.status],
-                  platforms: draft.platforms,
-                  streamers: state.streamers.length,
-                  oauth: state.bot.status,
-                  scopes: state.bot.scopes ?? [],
-                  browser: draft.browserMode,
-                  timers: {
-                    scan: Boolean(state.monitor.nextScan),
-                    device: state.deviceAuth.status,
-                  },
-                  runtime: state.runtime,
-                  internalBrowser: state.internalBrowser,
-                  extensionHeartbeat: state.extension.lastHeartbeat,
-                },
-                null,
-                2,
-              )}
-            </pre>
-            <button
-              onClick={() =>
-                void window.api.copy(
-                  JSON.stringify(
-                    {
-                      version: "1.0.8",
-                      monitor: state.monitor.status,
-                      oauth: state.bot.status,
-                      scopes: state.bot.scopes ?? [],
-                      streamers: state.streamers.length,
-                      browser: draft.browserMode,
-                    },
-                    null,
-                    2,
-                  ),
-                )
-              }
-            >
-              Copiar diagnóstico
-            </button>
-          </div>
-        )}
-      </article>
-      <div className="settings-save">
-        <button onClick={() => setDraft(saved)} disabled={!dirty}>
-          Descartar cambios
-        </button>
-        <button
-          className="primary"
-          onClick={() => void save()}
-          disabled={!dirty || errors.length > 0}
-        >
-          Guardar cambios
-        </button>
-      </div>
+          {result && <p role="status">{result}</p>}
+        </Card>
+      )}
     </section>
   );
 }
+
 function Activity({ state }: { state: AppState }) {
+  const [filter, setFilter] = useState("Todos");
+  const items = state.activity.filter(
+    (x) =>
+      filter === "Todos" ||
+      (filter === "Errores" && x.level === "error") ||
+      (filter === "Twitch" && x.platform === "twitch") ||
+      (filter === "Kick" && x.platform === "kick") ||
+      (filter === "Monitor" && /monitor/i.test(x.description)) ||
+      (filter === "Mensajes" && /mensaje/i.test(x.description)) ||
+      (filter === "Navegador" &&
+        /pestaña|ventana|directo abierto/i.test(x.description)),
+  );
   return (
     <section>
-      <h2>Actividad</h2>
-      <div className="actions">
-        <button
-          onClick={() =>
-            void window.api.copy(
-              state.activity
-                .map((x) => `${x.at} ${x.level} ${x.description}`)
-                .join("\n"),
-            )
-          }
-        >
-          Copiar registros
-        </button>
-        <button
-          className="danger"
-          onClick={() =>
-            confirm("¿Limpiar el historial?") && void window.api.clearActivity()
-          }
-        >
-          Limpiar
-        </button>
-      </div>
-      <div className="list">
-        {state.activity.map((item) => (
-          <article key={item.id}>
-            <time>{new Date(item.at).toLocaleString()}</time>
-            <b>{item.level}</b>
-            <span>
-              {item.platform} {item.channel}
-            </span>
-            <p>{item.description}</p>
-          </article>
+      <PageHeader
+        title="Actividad"
+        description="Una cronología clara de lo que ha hecho la aplicación."
+        action={
+          <button
+            className="button danger-text"
+            onClick={() =>
+              confirm("¿Borrar todo el historial?") &&
+              void window.api.clearActivity()
+            }
+          >
+            Borrar historial
+          </button>
+        }
+      />
+      <div className="filter-pills">
+        {[
+          "Todos",
+          "Monitor",
+          "Twitch",
+          "Kick",
+          "Navegador",
+          "Mensajes",
+          "Errores",
+        ].map((x) => (
+          <button
+            key={x}
+            className={filter === x ? "active" : ""}
+            onClick={() => setFilter(x)}
+          >
+            {x}
+          </button>
         ))}
       </div>
+      {!items.length ? (
+        <EmptyState
+          icon="◷"
+          title="No hay actividad en este filtro"
+          description="Los próximos eventos aparecerán aquí."
+        />
+      ) : (
+        <div className="timeline">
+          {items.map((item) => (
+            <div className={`activity-item ${item.level}`} key={item.id}>
+              <i />
+              <div>
+                <div>
+                  <b>{friendlyActivity(item.description)}</b>
+                  <time>{new Date(item.at).toLocaleString()}</time>
+                </div>
+                {item.channel && (
+                  <p>
+                    {item.channel} · {item.platform}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
-function Contact() {
+
+type SaveState = "idle" | "saving" | "saved" | "error";
+function SettingsPage({ state }: { state: AppState }) {
+  const categories = [
+    "Apariencia",
+    "Inicio y bandeja",
+    "Monitor",
+    "Apertura de directos",
+    "Pestañas y sonido",
+    "Notificaciones",
+    "Privacidad y datos",
+    "Avanzado",
+    "Diagnóstico",
+  ] as const;
+  const [category, setCategory] =
+    useState<(typeof categories)[number]>("Apariencia");
+  const [draft, setDraft] = useState(state.settings);
+  const [status, setStatus] = useState<SaveState>("idle");
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const revision = useRef(0);
+  const pending = useRef(false);
+  const lastPatch = useRef<Partial<Settings>>({});
+  useEffect(() => {
+    if (!pending.current) setDraft(state.settings);
+  }, [state.settings]);
+  const persist = async (patch: Partial<Settings>, rev: number) => {
+    setStatus("saving");
+    lastPatch.current = patch;
+    try {
+      await window.api.saveSettings(patch);
+      if (rev === revision.current) {
+        pending.current = false;
+        setStatus("saved");
+      }
+    } catch {
+      if (rev === revision.current) setStatus("error");
+    }
+  };
+  const update = <K extends keyof Settings>(
+    key: K,
+    value: Settings[K],
+    immediate = false,
+  ) => {
+    const next = { ...draft, [key]: value };
+    setDraft(next);
+    if (key === "theme") document.documentElement.dataset.theme = String(value);
+    pending.current = true;
+    revision.current++;
+    const rev = revision.current;
+    clearTimeout(timer.current);
+    if (validateSettings(next).length) {
+      setStatus("idle");
+      return;
+    }
+    const patch = { [key]: value } as Partial<Settings>;
+    if (immediate) void persist(patch, rev);
+    else timer.current = setTimeout(() => void persist(patch, rev), 550);
+  };
+  const bool = (key: keyof Settings, title: string, description: string) => (
+    <SettingRow title={title} description={description}>
+      <Switch
+        label={title}
+        checked={Boolean(draft[key])}
+        onChange={(v) => update(key, v as never, true)}
+      />
+    </SettingRow>
+  );
   return (
     <section>
-      <h2>Contacto</h2>
-      <article>
-        <a
-          onClick={() =>
-            void window.api.open("mailto:contacto@vortexstudio.es")
-          }
-        >
-          contacto@vortexstudio.es
-        </a>
-      </article>
+      <PageHeader
+        title="Ajustes"
+        description="Personaliza la aplicación. Los cambios se guardan solos."
+        action={
+          <SaveStatus
+            status={status}
+            retry={() => void persist(lastPatch.current, revision.current)}
+          />
+        }
+      />
+      <div className="settings-layout">
+        <nav className="settings-nav" aria-label="Categorías de ajustes">
+          {categories.map((x) => (
+            <button
+              className={category === x ? "active" : ""}
+              onClick={() => setCategory(x)}
+              key={x}
+            >
+              {x}
+            </button>
+          ))}
+        </nav>
+        <Card className="settings-panel">
+          <h3>{category}</h3>
+          {category === "Apariencia" && (
+            <>
+              <SettingRow
+                title="Tema"
+                description="Elige un aspecto claro, oscuro o adaptado a Windows."
+              >
+                <select
+                  value={draft.theme}
+                  onChange={(e) =>
+                    update("theme", e.target.value as Settings["theme"], true)
+                  }
+                >
+                  <option value="system">Usar tema de Windows</option>
+                  <option value="light">Claro</option>
+                  <option value="dark">Oscuro</option>
+                </select>
+              </SettingRow>
+              <SettingRow
+                title="Idioma"
+                description="La interfaz está disponible en español."
+              >
+                <select disabled>
+                  <option>Español</option>
+                </select>
+              </SettingRow>
+            </>
+          )}
+          {category === "Inicio y bandeja" && (
+            <>
+              {bool(
+                "startup",
+                "Iniciar con Windows",
+                "Abre la aplicación al iniciar tu sesión.",
+              )}
+              {bool(
+                "startMinimized",
+                "Iniciar minimizada",
+                "Comienza discretamente en segundo plano.",
+              )}
+              {bool(
+                "minimizeToTray",
+                "Mantener en la bandeja al cerrar",
+                "La X oculta la ventana sin apagar el monitor.",
+              )}
+            </>
+          )}
+          {category === "Monitor" && (
+            <>
+              <SettingRow
+                title="Frecuencia de comprobación"
+                description="Cada cuánto se consultan tus canales."
+                error={
+                  draft.scanMinutes < 5 ? "El mínimo es 5 minutos." : undefined
+                }
+              >
+                <input
+                  type="number"
+                  min="5"
+                  value={draft.scanMinutes}
+                  onChange={(e) => update("scanMinutes", +e.target.value)}
+                />
+              </SettingRow>
+              {bool(
+                "autoStart",
+                "Encendido automático",
+                "Activa el monitor después de un periodo de inactividad.",
+              )}
+            </>
+          )}
+          {category === "Apertura de directos" && (
+            <>
+              <SettingRow
+                title="Modo de apertura"
+                description="Dónde se abrirán los directos nuevos."
+              >
+                <select
+                  value={draft.browserMode}
+                  onChange={(e) =>
+                    update(
+                      "browserMode",
+                      e.target.value as Settings["browserMode"],
+                      true,
+                    )
+                  }
+                >
+                  <option value="default">Navegador predeterminado</option>
+                  <option value="extension">Navegador con extensión</option>
+                  <option value="managed">
+                    Navegador interno con pestañas
+                  </option>
+                </select>
+              </SettingRow>
+              {bool(
+                "extensionFallback",
+                "Usar el navegador normal si la extensión falla",
+                "Evita perder un directo si Chrome o Edge no están disponibles.",
+              )}
+              {bool(
+                "reopenClosedStreams",
+                "Volver a abrir pestañas cerradas",
+                "Comprueba que el directo continúa antes de abrirlo de nuevo.",
+              )}
+              <SettingRow
+                title="Espera antes de reabrir"
+                description="Entre 3 y 60 segundos."
+              >
+                <input
+                  type="number"
+                  min="3"
+                  max="60"
+                  value={draft.reopenDelaySeconds}
+                  onChange={(e) =>
+                    update("reopenDelaySeconds", +e.target.value)
+                  }
+                />
+              </SettingRow>
+            </>
+          )}
+          {category === "Pestañas y sonido" && (
+            <>
+              {bool(
+                "muteManagedStreams",
+                "Silenciar pestañas nuevas",
+                "Los directos se abren sin sonido.",
+              )}
+              {bool(
+                "muteOtherInternalTabs",
+                "Silenciar las demás al activar una",
+                "Solo una pestaña interna reproduce sonido cada vez.",
+              )}
+              {bool(
+                "closeExtensionTabsOnEnd",
+                "Cerrar al terminar el directo",
+                "Cierra únicamente la pestaña administrada correspondiente.",
+              )}
+              {bool(
+                "closeInternalBrowserWhenEmpty",
+                "Cerrar el navegador interno cuando quede vacío",
+                "La ventana desaparece después del último directo.",
+              )}
+            </>
+          )}
+          {category === "Notificaciones" &&
+            bool(
+              "notifications",
+              "Mostrar notificaciones",
+              "Recibe avisos de directos, conexiones e incidencias.",
+            )}
+          {category === "Privacidad y datos" && (
+            <>
+              <Alert title="Tus credenciales están protegidas">
+                Los tokens de Twitch se cifran mediante Windows y nunca se
+                envían al renderer ni a la extensión.
+              </Alert>
+              <div className="card-actions">
+                <button onClick={() => void window.api.exportData()}>
+                  Exportar configuración
+                </button>
+                <button onClick={() => void window.api.importData()}>
+                  Importar configuración
+                </button>
+                <button
+                  className="danger-text"
+                  onClick={() =>
+                    confirm("¿Borrar el historial?") &&
+                    void window.api.clearActivity()
+                  }
+                >
+                  Borrar historial
+                </button>
+              </div>
+            </>
+          )}
+          {category === "Avanzado" && (
+            <>
+              {bool(
+                "closeExtensionTabsOnAppClose",
+                "Cerrar pestañas al salir completamente",
+                "No se aplica al minimizar en la bandeja.",
+              )}
+              {bool(
+                "notifyExtensionErrors",
+                "Avisar de errores de la extensión",
+                "Muestra problemas de conexión que requieren tu atención.",
+              )}
+              <IdHelp />
+              <button
+                onClick={() => update("onboardingCompleted", false, true)}
+              >
+                Volver a ver la guía inicial
+              </button>
+            </>
+          )}
+          {category === "Diagnóstico" && (
+            <>
+              <pre className="diagnostic">
+                {JSON.stringify(
+                  {
+                    version: "1.1.0",
+                    system: navigator.platform,
+                    monitor: MONITOR_LABELS[state.monitor.status],
+                    twitch: state.bot.status,
+                    kick: state.settings.platforms.kick.enabled,
+                    extension: state.extension.connected,
+                    connector: state.extension.nativeHostConnected,
+                    browser: state.settings.browserMode,
+                    timers: state.runtime,
+                    lastScan: state.monitor.lastScan,
+                    nextScan: state.monitor.nextScan,
+                    errors: state.monitor.errors.slice(0, 3),
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+              <button
+                onClick={() =>
+                  void window.api.copy(
+                    JSON.stringify(
+                      {
+                        version: "1.1.0",
+                        monitor: state.monitor.status,
+                        twitch: state.bot.status,
+                        kick: state.settings.platforms.kick.enabled,
+                        extension: state.extension.connected,
+                        connector: state.extension.nativeHostConnected,
+                        browser: state.settings.browserMode,
+                        lastScan: state.monitor.lastScan,
+                        nextScan: state.monitor.nextScan,
+                        errors: state.monitor.errors.slice(0, 3),
+                      },
+                      null,
+                      2,
+                    ),
+                  )
+                }
+              >
+                Copiar diagnóstico
+              </button>
+            </>
+          )}
+        </Card>
+      </div>
     </section>
   );
+}
+
+function Onboarding({ state, go }: { state: AppState; go: (p: Page) => void }) {
+  const [step, setStep] = useState(0);
+  const steps = [
+    {
+      title: "Bienvenido",
+      text: "Vamos a preparar la aplicación para acompañar a tus streamers.",
+      icon: "♡",
+    },
+    {
+      title: "Elige tus plataformas",
+      text: "Puedes usar Twitch, Kick o ambas.",
+      icon: "◉",
+    },
+    {
+      title: "Conecta Twitch",
+      text: "La autorización se hace mediante el flujo seguro de dispositivo.",
+      icon: "T",
+    },
+    {
+      title: "Elige dónde abrir",
+      text: "Navegador normal, extensión o una ventana interna con pestañas.",
+      icon: "▣",
+    },
+    {
+      title: "Añade tu primer streamer",
+      text: "Solo necesitamos su nombre o URL; intentaremos completar el resto.",
+      icon: "＋",
+    },
+    {
+      title: "Todo preparado",
+      text: "Enciende el monitor y nosotros nos ocupamos de comprobar los directos.",
+      icon: "✓",
+    },
+  ];
+  const finish = async () => {
+    await window.api.saveSettings({ onboardingCompleted: true });
+    go(state.streamers.length ? "Inicio" : "Streamers");
+  };
+  const current = steps[step];
+  return (
+    <div className="backdrop onboarding">
+      <div
+        className="modal onboarding-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
+      >
+        <button className="skip" onClick={() => void finish()}>
+          Omitir guía
+        </button>
+        <span className="onboarding-icon">{current.icon}</span>
+        <small>
+          Paso {step + 1} de {steps.length}
+        </small>
+        <h2 id="onboarding-title">{current.title}</h2>
+        <p>{current.text}</p>
+        {step === 1 && (
+          <div className="choice-row">
+            <PlatformMark platform="twitch" />
+            <PlatformMark platform="kick" />
+          </div>
+        )}
+        {step === 3 && (
+          <div className="mini-modes">
+            <span>↗ Normal</span>
+            <span>◫ Extensión</span>
+            <span>▣ Interno</span>
+          </div>
+        )}
+        <div className="dots">
+          {steps.map((_, i) => (
+            <i className={i === step ? "active" : ""} key={i} />
+          ))}
+        </div>
+        <div className="modal-actions">
+          {step > 0 && <button onClick={() => setStep(step - 1)}>Atrás</button>}
+          <button
+            className="primary"
+            onClick={() =>
+              step === steps.length - 1 ? void finish() : setStep(step + 1)
+            }
+          >
+            {step === steps.length - 1 ? "Empezar" : "Continuar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function relativeTime(value: string) {
+  const diff = new Date(value).getTime() - Date.now();
+  const abs = Math.abs(diff);
+  const minutes = Math.round(abs / 60000);
+  if (minutes < 1)
+    return diff < 0 ? "hace un momento" : "en menos de un minuto";
+  if (minutes < 60)
+    return diff < 0 ? `hace ${minutes} min` : `en ${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  return diff < 0 ? `hace ${hours} h` : `en ${hours} h`;
+}
+function botLabel(status: AppState["bot"]["status"]) {
+  return (
+    {
+      connected: "Conectado",
+      disconnected: "Desconectado",
+      expired: "Token caducado",
+      "insufficient-permissions": "Faltan permisos",
+      "unauthorized-channel": "Canal sin autorizar",
+      "rate-limited": "Demasiadas solicitudes",
+      paused: "En pausa",
+    } as const
+  )[status];
+}
+function friendlyActivity(text: string) {
+  return text
+    .replace(/scan/gi, "comprobación")
+    .replace(/Native Messaging/gi, "conector del navegador")
+    .replace(/managed/gi, "administrada");
 }

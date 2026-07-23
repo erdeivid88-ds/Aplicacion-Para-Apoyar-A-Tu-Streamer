@@ -33,7 +33,9 @@ import { parseImport } from "../../src/domain/import";
 import { ScanLock, transition } from "../../src/domain/monitor";
 import { completedStopState } from "../../src/domain/monitor-control";
 import { streamUrl, validateStreamUrl } from "../../src/domain/stream-url";
+import { validateSettings } from "../../src/domain/settings-ui";
 import { migrateConnectionFrom102 } from "../../src/domain/twitch-account";
+import { migrateSettings110 } from "../../src/domain/migration";
 import {
   defaultAutomation,
   defaultRuntime,
@@ -58,6 +60,7 @@ let scanController: AbortController | null = null;
 const userClosedForMonitorSession = new Set<string>();
 let extensionClient: BrowserExtensionClient | null = null;
 let systemSuspended = false;
+let lastSettingsRevision = 0;
 const reopenState = new Map<
   string,
   {
@@ -81,12 +84,8 @@ const auth = new TwitchAuth(() =>
 );
 function migrate() {
   const raw = store.store as AppState;
-  store.set("schemaVersion", 4);
-  store.set("settings", {
-    ...defaults.settings,
-    ...raw.settings,
-    platforms: { ...defaults.settings.platforms, ...raw.settings?.platforms },
-  });
+  store.set("schemaVersion", 5);
+  store.set("settings", migrateSettings110(raw));
   store.set("bot", migrateConnectionFrom102(raw.bot));
   store.set("deviceAuth", raw.deviceAuth ?? { status: "idle" });
   store.set("monitor", {
@@ -259,6 +258,7 @@ const safeExternal = (value: string) => {
       "www.kick.com",
       "ids.vortexstudio.es",
       "dev.twitch.tv",
+      "github.com",
     ].includes(url.hostname)
   )
     throw new Error("Dominio no permitido.");
@@ -728,7 +728,30 @@ function register() {
       throw error;
     }
   });
-  handle("streamer:save", (value) => {
+  handle("streamer:resolve", async (platform, value) => {
+    if (
+      (platform !== "twitch" && platform !== "kick") ||
+      typeof value !== "string"
+    )
+      throw new Error("Canal no válido.");
+    let login = value.trim().replace(/^@/, "").toLowerCase();
+    if (/^https:/i.test(login)) {
+      const checked = validateStreamUrl(platform, login);
+      if (!checked.valid) throw new Error(checked.reason);
+      login = checked.login;
+    }
+    if (!validName(login)) throw new Error("Nombre de canal no válido.");
+    if (platform === "kick")
+      return { externalId: "", login, displayName: login };
+    const user = await auth.resolveChannel(login);
+    return {
+      externalId: user.id,
+      login: user.login,
+      displayName: user.displayName,
+      avatar: user.avatar,
+    };
+  });
+  handle("streamer:save", async (value) => {
     const input = value as Partial<Streamer>;
     if (!input.platform || !input.displayName || !validName(input.displayName))
       throw new Error("Nombre de canal no válido.");
@@ -740,14 +763,22 @@ function register() {
     if (automation.authorized && !old?.automation.authorized)
       automation.authorizedAt = new Date().toISOString();
     if (!automation.authorized) automation.authorizedAt = undefined;
+    const resolved =
+      input.platform === "twitch" && !input.externalId
+        ? await auth.resolveChannel(normalizeName(input.displayName))
+        : undefined;
     const item: Streamer = {
       ...(old ?? {}),
       id: input.id ?? randomUUID(),
       platform: input.platform,
-      displayName: input.displayName.trim(),
-      normalizedName: normalizeName(input.displayName),
-      externalId: input.externalId?.trim() || undefined,
-      url: streamUrl(input.platform, normalizeName(input.displayName)),
+      displayName: resolved?.displayName ?? input.displayName.trim(),
+      normalizedName: resolved?.login ?? normalizeName(input.displayName),
+      externalId: resolved?.id ?? (input.externalId?.trim() || undefined),
+      avatar: resolved?.avatar ?? input.avatar ?? old?.avatar,
+      url: streamUrl(
+        input.platform,
+        resolved?.login ?? normalizeName(input.displayName),
+      ),
       enabled: input.enabled ?? true,
       live: old?.live ?? false,
       automation,
@@ -798,7 +829,19 @@ function register() {
     await openStream({ ...streamer, ...result });
   });
   handle("settings:save", (value) => {
-    const patch = value as Partial<AppState["settings"]>;
+    const envelope = value as {
+      patch?: Partial<AppState["settings"]>;
+      revision?: number;
+    };
+    const patch = envelope.patch ?? (value as Partial<AppState["settings"]>);
+    if (envelope.revision !== undefined) {
+      if (
+        !Number.isSafeInteger(envelope.revision) ||
+        envelope.revision <= lastSettingsRevision
+      )
+        return;
+      lastSettingsRevision = envelope.revision;
+    }
     const previousMode = store.get("settings.browserMode");
     const allowed: Partial<AppState["settings"]> = {};
     for (const key of [
@@ -833,6 +876,7 @@ function register() {
       "closeInternalBrowserWhenEmpty",
       "theme",
       "showStartNotice",
+      "onboardingCompleted",
     ] as const)
       if (patch[key] !== undefined)
         (allowed as Record<string, unknown>)[key] = patch[key];
@@ -849,7 +893,10 @@ function register() {
           ...patch.platforms.kick,
         },
       };
-    store.set("settings", { ...store.get("settings"), ...allowed });
+    const nextSettings = { ...store.get("settings"), ...allowed };
+    const validationErrors = validateSettings(nextSettings);
+    if (validationErrors.length) throw new Error(validationErrors[0]);
+    store.set("settings", nextSettings);
     if (
       (patch.browserMode && patch.browserMode !== previousMode) ||
       patch.reopenClosedStreams === false
@@ -929,6 +976,9 @@ function createWindow() {
     },
   });
   win.webContents.setBackgroundThrottling(false);
+  win.webContents.on("did-finish-load", () => {
+    lastSettingsRevision = 0;
+  });
   win.setMenuBarVisibility(false);
   win.webContents.setWindowOpenHandler(({ url }) => {
     void safeExternal(url);
