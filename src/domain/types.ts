@@ -79,6 +79,8 @@ export interface Settings {
   closeInternalWindowsOnMonitorStop: boolean;
   reopenOnNewMonitorSession: boolean;
   extensionFallback: boolean;
+  extensionBrowser: "chrome" | "edge";
+  extensionInstallCompleted: boolean;
   notifyExtensionErrors: boolean;
   reopenClosedStreams: boolean;
   reopenDelaySeconds: number;
@@ -206,6 +208,8 @@ export const defaults: AppState = {
     closeInternalWindowsOnMonitorStop: true,
     reopenOnNewMonitorSession: true,
     extensionFallback: true,
+    extensionBrowser: "edge",
+    extensionInstallCompleted: false,
     notifyExtensionErrors: true,
     reopenClosedStreams: true,
     reopenDelaySeconds: 5,

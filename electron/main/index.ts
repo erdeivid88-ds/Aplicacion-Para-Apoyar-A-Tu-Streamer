@@ -49,6 +49,14 @@ import { InternalBrowserManager, type InternalTab } from "./internal-browser";
 import { KickProvider, TwitchProvider } from "./providers";
 import { TwitchApiError, TwitchAuth } from "./twitch-auth";
 import { BrowserExtensionClient } from "./browser-extension-client";
+import { errorReportMailto } from "../../src/domain/support";
+import {
+  browserInstallations,
+  developmentExtensionPath,
+  diagnoseNativeHost,
+  registerNativeHost,
+  unregisterNativeHost,
+} from "./extension-installer";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const store = new Store<AppState>({ name: "app-data", defaults });
 let win: BrowserWindow | null = null,
@@ -257,6 +265,8 @@ const safeExternal = (value: string) => {
       "kick.com",
       "www.kick.com",
       "ids.vortexstudio.es",
+      "chromewebstore.google.com",
+      "microsoftedge.microsoft.com",
       "dev.twitch.tv",
       "github.com",
     ].includes(url.hostname)
@@ -624,6 +634,30 @@ function register() {
   handle("extension:close-all", () =>
     extensionClient?.request("close_all_managed_streams"),
   );
+  handle("extension:detect-browsers", () => browserInstallations());
+  handle("extension:development-path", () => developmentExtensionPath());
+  handle("extension:open-settings", async (value) => {
+    if (value !== "chrome" && value !== "edge") throw new Error("Navegador no válido.");
+    const address = `${value}://extensions`;
+    try {
+      await shell.openExternal(address);
+      return { opened: true, address };
+    } catch {
+      return { opened: false, address };
+    }
+  });
+  handle("extension:register-host", async (value) => {
+    const result = await registerNativeHost(value);
+    store.set("extension.nativeHostConnected", result.registered);
+    emit();
+    return result;
+  });
+  handle("extension:unregister-host", async (value) => {
+    await unregisterNativeHost(value);
+    store.set("extension.nativeHostConnected", false);
+    emit();
+  });
+  handle("extension:diagnose-host", (value) => diagnoseNativeHost(value));
   handle("monitor:start", () => start());
   handle("monitor:stop", () => stop());
   handle("monitor:force-stop", () => stop(true, true));
@@ -867,6 +901,8 @@ function register() {
       "closeInternalWindowsOnMonitorStop",
       "reopenOnNewMonitorSession",
       "extensionFallback",
+      "extensionBrowser",
+      "extensionInstallCompleted",
       "notifyExtensionErrors",
       "reopenClosedStreams",
       "reopenDelaySeconds",
@@ -1020,6 +1056,11 @@ function updateTray() {
         label: "Apagar monitor",
         click: () => void stop(),
         enabled: status !== "off" && status !== "stopping",
+      },
+      { type: "separator" },
+      {
+        label: "Informar sobre un error",
+        click: () => void safeExternal(errorReportMailto(state() as AppState, process.platform)),
       },
       { type: "separator" },
       {

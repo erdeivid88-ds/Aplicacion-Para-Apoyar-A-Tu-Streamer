@@ -18,6 +18,12 @@ declare global {
       testExtension: () => Promise<void>;
       muteExtensionTabs: () => Promise<void>;
       closeExtensionTabs: () => Promise<void>;
+      detectBrowsers: () => Promise<{ chrome: boolean; edge: boolean }>;
+      developmentExtensionPath: () => Promise<string>;
+      openExtensionSettings: (browser: "chrome" | "edge") => Promise<{ opened: boolean; address: string }>;
+      registerNativeHost: (browser: "chrome" | "edge") => Promise<{ registered: boolean }>;
+      unregisterNativeHost: (browser: "chrome" | "edge") => Promise<void>;
+      diagnoseNativeHost: (browser: "chrome" | "edge") => Promise<{ registered: boolean }>;
       connectTwitch: (type: TwitchAccountType) => Promise<void>;
       disconnectBot: () => Promise<void>;
       cancelTwitchConnect: () => Promise<void>;

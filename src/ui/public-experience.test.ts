@@ -16,10 +16,16 @@ describe("experiencia pública 1.1.0", () => {
   });
   it("ofrece estados vacíos, onboarding y ayuda de IDs", async () => {
     const app = await readFile("src/ui/App.tsx", "utf8");
+    const support = await readFile("src/domain/support.ts", "utf8");
     expect(app).toContain("Todavía no has añadido ningún streamer");
     expect(app).toContain("Onboarding");
-    expect(app).toContain("https://ids.vortexstudio.es");
-    expect(app).toContain("Abrir herramienta de IDs");
+    expect(support).toContain("https://ids.vortexstudio.es");
+    expect(app).toContain("Abrir Vortex IDs");
+  });
+  it("separa la instalación pública, la de prueba y el soporte", async () => {
+    const app = await readFile("src/ui/App.tsx", "utf8");
+    for (const text of ["Añadir extensión", "Google Chrome", "Microsoft Edge", "Extensión todavía no publicada", "Instalar versión de prueba", "Configurar conexión", "Informar sobre un error", "Copiar diagnóstico seguro"]) expect(app).toContain(text);
+    expect(app.match(/<IdHelp \/>/g)?.length).toBe(1);
   });
   it("guarda automáticamente con debounce y revisiones", async () => {
     const app = await readFile("src/ui/App.tsx", "utf8");

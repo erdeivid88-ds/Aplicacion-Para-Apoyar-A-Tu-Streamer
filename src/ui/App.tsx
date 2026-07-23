@@ -8,6 +8,14 @@ import {
 } from "../domain/types";
 import { MONITOR_LABELS, validateSettings } from "../domain/settings-ui";
 import {
+  errorReportMailto,
+  errorReportTemplate,
+  extensionStoreUrl,
+  IDS_URL,
+  safeDiagnostic,
+  SUPPORT_EMAIL,
+} from "../domain/support";
+import {
   Alert,
   Card,
   EmptyState,
@@ -28,9 +36,9 @@ const navigation = [
   ["Navegador", "▣"],
   ["Actividad", "◷"],
   ["Ajustes", "⚙"],
+  ["Ayuda", "?"],
 ] as const;
 type Page = (typeof navigation)[number][0];
-const IDS_URL = "https://ids.vortexstudio.es";
 
 export default function App() {
   const [state, setState] = useState<AppState>();
@@ -76,6 +84,7 @@ export default function App() {
         {page === "Navegador" && <Browser state={state} />}{" "}
         {page === "Actividad" && <Activity state={state} />}{" "}
         {page === "Ajustes" && <SettingsPage state={state} />}
+        {page === "Ayuda" && <HelpSupport state={state} go={setPage} />}
         {state.monitor.toast && (
           <div className="toast" role="status">
             {state.monitor.toast}
@@ -601,7 +610,7 @@ function StreamerWizard({ close }: { close: () => void }) {
               </small>
             </label>
             {(platform === "kick" || error) && (
-              <label className="field">
+              <><label className="field">
                 ID del canal {platform === "twitch" ? "de Twitch" : "de Kick"}
                 <input
                   value={manualId}
@@ -611,14 +620,13 @@ function StreamerWizard({ close }: { close: () => void }) {
                 <small>
                   Kick necesita esta ID para consultar su API oficial.
                 </small>
-              </label>
+              </label><IdHelp /></>
             )}
             {error && (
               <Alert tone="error" title="No pudimos verificar el canal">
                 {error}
               </Alert>
             )}
-            <IdHelp />
           </>
         )}
         {step === 3 && preview && (
@@ -674,10 +682,10 @@ function IdHelp() {
       <Tooltip text="La ID es el identificador numérico único del canal." />
       <div>
         <b>¿No sabes cuál es la ID?</b>
-        <p>Puedes obtenerla fácilmente en ids.vortexstudio.es.</p>
+        <p>Puedes obtenerla en Vortex IDs.</p>
       </div>
       <button onClick={() => void window.api.open(IDS_URL)}>
-        ↗ Abrir herramienta de IDs
+        Abrir Vortex IDs
       </button>
     </div>
   );
@@ -843,7 +851,6 @@ function Platforms({ state }: { state: AppState }) {
               }
             />
           </SettingRow>
-          <IdHelp />
         </Card>
       </div>
     </section>
@@ -981,6 +988,7 @@ function Automations({ state }: { state: AppState }) {
 
 function Browser({ state }: { state: AppState }) {
   const [result, setResult] = useState("");
+  const [installer, setInstaller] = useState(false);
   const modes = [
     {
       id: "default" as const,
@@ -1070,8 +1078,10 @@ function Browser({ state }: { state: AppState }) {
                 : "Conector no registrado"}
           </StatusBadge>
           <div className="card-actions">
+            <button className="primary" onClick={() => setInstaller(true)}>
+              Añadir extensión
+            </button>
             <button
-              className="primary"
               onClick={async () => {
                 setResult("Comprobando…");
                 try {
@@ -1117,7 +1127,74 @@ function Browser({ state }: { state: AppState }) {
           {result && <p role="status">{result}</p>}
         </Card>
       )}
+      {installer && (
+        <ExtensionInstaller state={state} close={() => setInstaller(false)} />
+      )}
     </section>
+  );
+}
+
+type InstallerStage = "pending" | "installed" | "configuring" | "configured" | "checking" | "connected" | "error";
+function ExtensionInstaller({ state, close }: { state: AppState; close: () => void }) {
+  const [browser, setBrowser] = useState<"chrome" | "edge">(state.settings.extensionBrowser);
+  const [detected, setDetected] = useState({ chrome: false, edge: false });
+  const [stage, setStage] = useState<InstallerStage>(state.extension.connected ? "connected" : "pending");
+  const [message, setMessage] = useState("");
+  const [development, setDevelopment] = useState(false);
+  const [path, setPath] = useState("");
+  const storeUrl = extensionStoreUrl(browser);
+  useEffect(() => { void window.api.detectBrowsers().then(setDetected); }, []);
+  const choose = (value: "chrome" | "edge") => {
+    setBrowser(value);
+    void window.api.saveSettings({ extensionBrowser: value });
+  };
+  const openDevelopment = async () => {
+    setDevelopment(true);
+    const extensionPath = await window.api.developmentExtensionPath();
+    setPath(extensionPath);
+    const opened = await window.api.openExtensionSettings(browser);
+    if (!opened.opened) setMessage(`Copia ${opened.address} y pégala en la barra de direcciones.`);
+  };
+  const configure = async () => {
+    setStage("configuring"); setMessage("Configurando el conector…");
+    try {
+      const value = await window.api.registerNativeHost(browser);
+      if (!value.registered) throw new Error("El conector del navegador no está registrado.");
+      setStage("configured"); setMessage("Conector configurado. Ya puedes comprobar la comunicación.");
+    } catch (error) { setStage("error"); setMessage(error instanceof Error ? error.message : "No se pudo configurar el conector."); }
+  };
+  const check = async () => {
+    setStage("checking"); setMessage("Comprobando comunicación…");
+    try {
+      await window.api.checkExtension();
+      setStage("connected"); setMessage("Extensión conectada y lista para usar.");
+      await window.api.saveSettings({ extensionInstallCompleted: true });
+    } catch { setStage("error"); setMessage(`No se recibió respuesta de ${browser === "edge" ? "Microsoft Edge" : "Google Chrome"}. Comprueba que la extensión esté instalada y abierta.`); }
+  };
+  return (
+    <div className="backdrop">
+      <div className="modal installer-modal" role="dialog" aria-modal="true" aria-labelledby="installer-title">
+        <button className="skip" onClick={close}>Cerrar</button>
+        <h2 id="installer-title">Instalar extensión del navegador</h2>
+        <p>Selecciona el navegador donde quieres utilizar Apoya a tu Streamer.</p>
+        <div className="browser-choice">
+          {(["chrome", "edge"] as const).map((item) => <button key={item} className={browser === item ? "selected" : ""} onClick={() => choose(item)}><b>{item === "chrome" ? "◉ Google Chrome" : "e Microsoft Edge"}</b><span>{detected[item] ? "Instalado" : "No detectado"}</span><small>{state.extension.browser === item && state.extension.connected ? "Extensión conectada" : "Continuar"}</small></button>)}
+        </div>
+        <ol className="install-progress">
+          <li className="done">Navegador seleccionado</li><li className={stage !== "pending" ? "done" : ""}>Extensión instalada</li><li className={["configured","checking","connected"].includes(stage) ? "done" : ""}>Conector registrado</li><li className={stage === "connected" ? "done" : ""}>Comunicación comprobada</li><li className={stage === "connected" ? "done" : ""}>Listo para usar</li>
+        </ol>
+        {!development ? <>
+          {!storeUrl && <Alert tone="info" title="Extensión todavía no publicada">La tienda oficial aún no está configurada. Puedes instalar la versión de prueba para desarrollo local.</Alert>}
+          {storeUrl && <div className="install-instructions"><p>{browser === "chrome" ? "Pulsa Añadir a Chrome, confirma Añadir extensión y vuelve a la aplicación." : "Pulsa Obtener, confirma la instalación y vuelve a la aplicación."}</p><button className="primary" onClick={() => void window.api.open(storeUrl)}>Abrir tienda</button></div>}
+          <div className="card-actions"><button onClick={() => { setStage("installed"); setMessage("Instalación confirmada. Configura ahora la conexión."); }}>Ya la he instalado</button><button onClick={() => void openDevelopment()}>Instalar versión de prueba</button></div>
+        </> : <div className="install-instructions"><Alert tone="warning" title="Versión de prueba">Activa el modo desarrollador, pulsa “Cargar descomprimida” y selecciona esta carpeta.</Alert><code>{path}</code><div className="card-actions"><button onClick={() => void window.api.copy(path)}>Copiar ruta</button><button onClick={() => void window.api.copy(`${browser}://extensions`)}>Copiar dirección</button><button onClick={() => void openDevelopment()}>Ver instrucciones</button></div></div>}
+        <div className="card-actions"><button className="primary" onClick={() => void configure()}>Configurar conexión</button><button onClick={() => void check()}>Comprobar conexión</button><button onClick={() => void check()}>Reintentar</button></div>
+        {message && <Alert tone={stage === "error" ? "error" : "info"} title={stage === "error" ? "No se pudo completar" : "Estado"}>{message}</Alert>}
+        {stage === "error" && <SupportActions state={state} compact />}
+        <details><summary>Detalles técnicos</summary><p>El conector se registra para tu usuario de Windows y autoriza únicamente el ID estable de esta extensión.</p></details>
+        {!detected[browser] && <details><summary>No aparece mi navegador</summary><p>Puedes continuar si está instalado en otra ruta. Abre manualmente la página de extensiones y sigue los mismos pasos.</p></details>}
+      </div>
+    </div>
   );
 }
 
@@ -1212,6 +1289,7 @@ function SettingsPage({ state }: { state: AppState }) {
     "Privacidad y datos",
     "Avanzado",
     "Diagnóstico",
+    "Ayuda y soporte",
   ] as const;
   const [category, setCategory] =
     useState<(typeof categories)[number]>("Apariencia");
@@ -1477,7 +1555,6 @@ function SettingsPage({ state }: { state: AppState }) {
                 "Avisar de errores de la extensión",
                 "Muestra problemas de conexión que requieren tu atención.",
               )}
-              <IdHelp />
               <button
                 onClick={() => update("onboardingCompleted", false, true)}
               >
@@ -1531,12 +1608,45 @@ function SettingsPage({ state }: { state: AppState }) {
               >
                 Copiar diagnóstico
               </button>
+              <SupportActions state={state} compact />
             </>
           )}
+          {category === "Ayuda y soporte" && <HelpContent state={state} />}
         </Card>
       </div>
     </section>
   );
+}
+
+function SupportActions({ state, compact = false }: { state: AppState; compact?: boolean }) {
+  const [fallback, setFallback] = useState(false);
+  const report = async () => {
+    try { await window.api.open(errorReportMailto(state, navigator.platform)); }
+    catch { setFallback(true); }
+  };
+  return <div className={compact ? "support-actions compact" : "support-actions"}>
+    <button className="primary" onClick={() => void report()}>Informar sobre un error</button>
+    <button onClick={() => void window.api.copy(JSON.stringify(safeDiagnostic(state, navigator.platform), null, 2))}>Copiar diagnóstico seguro</button>
+    {fallback && <Alert tone="warning" title="No hay un cliente de correo configurado"><p>Copia el correo o la plantilla y pégalos en tu servicio de correo.</p><code>{SUPPORT_EMAIL}</code><div className="card-actions"><button onClick={() => void window.api.copy(SUPPORT_EMAIL)}>Copiar correo</button><button onClick={() => void window.api.copy(errorReportTemplate(state, navigator.platform))}>Copiar plantilla</button></div></Alert>}
+  </div>;
+}
+
+function HelpContent({ state }: { state: AppState }) {
+  return <div className="help-content">
+    <div className="help-grid">
+      <Card><h4>Configurar Twitch</h4><p>Añade tu Client ID público y conecta tu cuenta con el inicio seguro de Twitch.</p></Card>
+      <Card><h4>Añadir streamers</h4><p>Introduce un login o URL. Twitch completa automáticamente ID, nombre y avatar.</p></Card>
+      <Card><h4>Obtener IDs</h4><p>Si una ID no se puede resolver, usa Vortex IDs junto al campo de ID.</p><button onClick={() => void window.api.open(IDS_URL)}>Abrir Vortex IDs</button></Card>
+      <Card><h4>Instalar extensión</h4><p>Usa “Añadir extensión” en Navegador y sigue el asistente para Chrome o Edge.</p></Card>
+      <Card><h4>Solución de problemas</h4><p>Comprueba por separado la extensión, el conector y la comunicación.</p></Card>
+    </div>
+    <h3>Correo de soporte</h3><button className="email-link" onClick={() => void window.api.open(`mailto:${SUPPORT_EMAIL}`)}>{SUPPORT_EMAIL}</button><button onClick={() => void window.api.copy(SUPPORT_EMAIL)}>Copiar correo</button>
+    <SupportActions state={state} />
+  </div>;
+}
+
+function HelpSupport({ state, go }: { state: AppState; go: (page: Page) => void }) {
+  return <section><PageHeader title="Ayuda y soporte" description="Guías sencillas, solución de problemas y contacto con Vortex Studio." action={<button onClick={() => go("Navegador")}>Instalar extensión</button>} /><HelpContent state={state} /></section>;
 }
 
 function Onboarding({ state, go }: { state: AppState; go: (p: Page) => void }) {

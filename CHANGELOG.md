@@ -2,6 +2,10 @@
 
 ## 1.1.0
 
+- Limita Vortex IDs a contextos donde se solicita una ID y lo elimina de Kick general y Ajustes avanzados.
+- Añade Ayuda y soporte, informes por correo con plantilla segura y diagnóstico copiable sin secretos.
+- Incorpora un asistente público para Chrome y Edge con tienda, versión de prueba, detección, registro HKCU mediante IPC y comprobación por ping.
+- Prepara la extensión para tiendas con iconos, privacidad, permisos documentados y ZIP limpio.
 - Rediseña por completo la experiencia pública con navegación adaptable, tarjetas visuales y lenguaje natural.
 - Añade onboarding, gestión visual de streamers, secciones propias para Automatizaciones y Navegador, y cronología filtrable.
 - Sustituye Guardar/Descartar por guardado automático validado, con debounce, revisiones, estado y reintento.

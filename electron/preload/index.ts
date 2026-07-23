@@ -22,6 +22,12 @@ contextBridge.exposeInMainWorld("api", {
   testExtension: () => ipcRenderer.invoke("extension:test-open"),
   muteExtensionTabs: () => ipcRenderer.invoke("extension:mute-all"),
   closeExtensionTabs: () => ipcRenderer.invoke("extension:close-all"),
+  detectBrowsers: () => ipcRenderer.invoke("extension:detect-browsers"),
+  developmentExtensionPath: () => ipcRenderer.invoke("extension:development-path"),
+  openExtensionSettings: (browser: "chrome" | "edge") => ipcRenderer.invoke("extension:open-settings", browser),
+  registerNativeHost: (browser: "chrome" | "edge") => ipcRenderer.invoke("extension:register-host", browser),
+  unregisterNativeHost: (browser: "chrome" | "edge") => ipcRenderer.invoke("extension:unregister-host", browser),
+  diagnoseNativeHost: (browser: "chrome" | "edge") => ipcRenderer.invoke("extension:diagnose-host", browser),
   connectTwitch: (type: TwitchAccountType) =>
     ipcRenderer.invoke("bot:connect", type),
   disconnectBot: () => ipcRenderer.invoke("bot:disconnect"),
