@@ -1,6 +1,6 @@
 # Apoya a tu Streamer
 
-Versión actual: **1.0.7**.
+Versión actual: **1.0.8**.
 
 ## Modos de apertura
 
@@ -15,6 +15,23 @@ La extensión no modifica ninguna pestaña cuando Apoya a tu Streamer está cerr
 Ejecuta `npm run build:extension`. En Chrome abre `chrome://extensions`; en Edge, `edge://extensions`. Activa el modo desarrollador, elige **Cargar descomprimida/desempaquetada** y selecciona `browser-extension/dist`. El ID de desarrollo fijo es `jnpgebgidkgjmafnbpknialnjhkaigic`.
 
 El host se compila con `npm run build:native-host`. Los manifiestos separados están en `native-host/manifests`; registra por usuario (HKCU) con `native-host/scripts/register.ps1`, indicando navegador, manifiesto y ruta absoluta del host. `unregister.ps1` elimina únicamente la clave de esta aplicación. La edición portable nunca registra el host automáticamente.
+
+Registro y diagnóstico recomendados en Windows:
+
+```powershell
+npm run native-host:register -- --browser=edge --extension-id=jnpgebgidkgjmafnbpknialnjhkaigic
+npm run native-host:register -- --browser=chrome --extension-id=jnpgebgidkgjmafnbpknialnjhkaigic
+npm run native-host:doctor
+npm run native-host:unregister -- --browser=edge
+```
+
+El registro genera manifiestos y un launcher estables en `native-host/generated`. En desarrollo detecta la ruta absoluta de `node.exe`; el Setup incluye su propio runtime y registra Chrome y Edge en HKCU. El nombre único del host es `es.vortexstudio.apoyaatustreamer`.
+
+## Navegador interno y ejecución en segundo plano
+
+El navegador interno utiliza una única `BrowserWindow` y un `WebContentsView` aislado por directo. La barra superior permite cambiar, silenciar y cerrar pestañas; al activar audio puede silenciar automáticamente las demás. Tanto la ventana principal como las vistas internas desactivan `backgroundThrottling`. Los scans, heartbeat, deduplicación y reaperturas viven en el proceso principal y continúan al minimizar u ocultar la aplicación en la bandeja.
+
+Si una pestaña administrada se cierra mientras el directo continúa, la aplicación espera el retraso configurado, vuelve a consultar la API y puede reabrirla hasta el límite establecido. La extensión nunca decide reabrir por sí sola.
 
 Permisos: `tabs`, `storage`, `nativeMessaging`, y acceso limitado a URLs de canal de Twitch y Kick. No se solicitan cookies, historial, `webRequest`, scripting ni `<all_urls>`.
 

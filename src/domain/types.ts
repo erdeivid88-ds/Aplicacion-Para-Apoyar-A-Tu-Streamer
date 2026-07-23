@@ -17,8 +17,7 @@ export type BotStatus =
   | "unauthorized-channel"
   | "rate-limited"
   | "paused";
-export const DEFAULT_AUTO_MESSAGE =
-  "HeyGuys HeyGuys HeyGuys";
+export const DEFAULT_AUTO_MESSAGE = "HeyGuys HeyGuys HeyGuys";
 export interface AutomationConfig {
   enabled: boolean;
   authorized: boolean;
@@ -81,6 +80,12 @@ export interface Settings {
   reopenOnNewMonitorSession: boolean;
   extensionFallback: boolean;
   notifyExtensionErrors: boolean;
+  reopenClosedStreams: boolean;
+  reopenDelaySeconds: number;
+  maxReopensPerStream: number;
+  askBeforeReopen: boolean;
+  muteOtherInternalTabs: boolean;
+  closeInternalBrowserWhenEmpty: boolean;
   theme: "light" | "dark" | "system";
   showStartNotice: boolean;
   platforms: Record<Platform, { enabled: boolean; clientId?: string }>;
@@ -138,6 +143,15 @@ export interface AppState {
     monitorSessionId?: string;
   };
   extension: ExtensionStatus;
+  internalBrowser: { open: boolean; tabs: number; activeStreamerId?: string };
+  runtime: {
+    mainWindowVisible: boolean;
+    mainWindowMinimized: boolean;
+    timersProcess: "main";
+    scanTimerActive: boolean;
+    backgroundThrottlingDisabled: boolean;
+    suspended: boolean;
+  };
 }
 export interface ExtensionStatus {
   connected: boolean;
@@ -192,6 +206,12 @@ export const defaults: AppState = {
     reopenOnNewMonitorSession: true,
     extensionFallback: true,
     notifyExtensionErrors: true,
+    reopenClosedStreams: true,
+    reopenDelaySeconds: 5,
+    maxReopensPerStream: 3,
+    askBeforeReopen: false,
+    muteOtherInternalTabs: true,
+    closeInternalBrowserWhenEmpty: true,
     theme: "system",
     showStartNotice: true,
     platforms: { twitch: { enabled: false }, kick: { enabled: false } },
@@ -207,5 +227,14 @@ export const defaults: AppState = {
     protocolVersion: 1,
     sessionActive: false,
     managedTabs: 0,
+  },
+  internalBrowser: { open: false, tabs: 0 },
+  runtime: {
+    mainWindowVisible: false,
+    mainWindowMinimized: false,
+    timersProcess: "main",
+    scanTimerActive: false,
+    backgroundThrottlingDisabled: true,
+    suspended: false,
   },
 };

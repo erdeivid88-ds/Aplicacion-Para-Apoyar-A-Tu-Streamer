@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.8
+
+- Añade registro, desregistro y diagnóstico completos del Native Messaging Host para Edge y Chrome en HKCU.
+- Mantiene el ID estable `jnpgebgidkgjmafnbpknialnjhkaigic` y prueba framing/ping mediante el launcher real.
+- Sustituye las ventanas internas múltiples por una única ventana con pestañas `WebContentsView` aisladas.
+- Mantiene monitor, heartbeat y pestañas al minimizar, con tratamiento de suspensión y reanudación de Windows.
+- Añade reapertura controlada tras confirmar que el directo continúa, con retraso y límite configurables.
+
 ## 1.0.7
 
 - Añade tres modos de apertura: navegador externo, Chrome/Edge mediante extensión y navegador interno aislado.

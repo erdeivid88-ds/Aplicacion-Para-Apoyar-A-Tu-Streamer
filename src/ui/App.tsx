@@ -5,7 +5,11 @@ import {
   type Platform,
   type Streamer,
 } from "../domain/types";
-import { MONITOR_LABELS, SETTINGS_CATEGORIES, validateSettings } from "../domain/settings-ui";
+import {
+  MONITOR_LABELS,
+  SETTINGS_CATEGORIES,
+  validateSettings,
+} from "../domain/settings-ui";
 const pages = [
   "Inicio",
   "Plataformas",
@@ -486,6 +490,12 @@ function Streamers({ state }: { state: AppState }) {
               </small>
             </div>
             <div className="actions">
+              <button onClick={() => void window.api.retryStream(item.id)}>
+                Reintentar apertura
+              </button>
+              <button onClick={() => void window.api.cancelReopen(item.id)}>
+                Cancelar reapertura
+              </button>
               <button onClick={() => setForm(item)}>Editar</button>
               <button
                 className="danger"
@@ -529,6 +539,7 @@ function Settings({ state }: { state: AppState }) {
     useState<(typeof categories)[number]>("General");
   const [draft, setDraft] = useState(state.settings);
   const [saved, setSaved] = useState(state.settings);
+  const [extensionCheck, setExtensionCheck] = useState("");
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
   const errors = validateSettings(draft);
   const update = <K extends keyof typeof draft>(
@@ -682,8 +693,12 @@ function Settings({ state }: { state: AppState }) {
                 }
               >
                 <option value="default">Navegador predeterminado</option>
-                <option value="extension">Navegador predeterminado con extensión</option>
-                <option value="managed">Navegador interno de la aplicación</option>
+                <option value="extension">
+                  Navegador predeterminado con extensión
+                </option>
+                <option value="managed">
+                  Navegador interno de la aplicación
+                </option>
               </select>
               <small>
                 El navegador externo no puede silenciarse ni cerrarse desde la
@@ -695,14 +710,102 @@ function Settings({ state }: { state: AppState }) {
               checked={draft.closeManagedTabs}
               set={(v) => update("closeManagedTabs", v)}
             />
-            <Check label="Silenciar pestañas administradas" checked={draft.muteManagedStreams} set={(v)=>update("muteManagedStreams",v)} />
-            <Check label="Abrir en segundo plano" checked={draft.openStreamsInBackground} set={(v)=>update("openStreamsInBackground",v)} />
-            <Check label="Enfocar pestaña al abrir" checked={draft.focusStreamOnOpen} set={(v)=>update("focusStreamOnOpen",v)} />
-            <Check label="Cerrar pestaña al terminar" checked={draft.closeExtensionTabsOnEnd} set={(v)=>update("closeExtensionTabsOnEnd",v)} />
-            <Check label="Cerrar pestañas al apagar monitor" checked={draft.closeExtensionTabsOnMonitorStop} set={(v)=>update("closeExtensionTabsOnMonitorStop",v)} />
-            <Check label="Cerrar pestañas al cerrar aplicación" checked={draft.closeExtensionTabsOnAppClose} set={(v)=>update("closeExtensionTabsOnAppClose",v)} />
-            <Check label="Cerrar ventanas internas al apagar el monitor" checked={draft.closeInternalWindowsOnMonitorStop} set={(v)=>update("closeInternalWindowsOnMonitorStop",v)} />
-            <Check label="Usar navegador predeterminado si la extensión no está disponible" checked={draft.extensionFallback} set={(v)=>update("extensionFallback",v)} />
+            <Check
+              label="Silenciar pestañas administradas"
+              checked={draft.muteManagedStreams}
+              set={(v) => update("muteManagedStreams", v)}
+            />
+            <Check
+              label="Abrir en segundo plano"
+              checked={draft.openStreamsInBackground}
+              set={(v) => update("openStreamsInBackground", v)}
+            />
+            <Check
+              label="Enfocar pestaña al abrir"
+              checked={draft.focusStreamOnOpen}
+              set={(v) => update("focusStreamOnOpen", v)}
+            />
+            <Check
+              label="Cerrar pestaña al terminar"
+              checked={draft.closeExtensionTabsOnEnd}
+              set={(v) => update("closeExtensionTabsOnEnd", v)}
+            />
+            <Check
+              label="Cerrar pestañas al apagar monitor"
+              checked={draft.closeExtensionTabsOnMonitorStop}
+              set={(v) => update("closeExtensionTabsOnMonitorStop", v)}
+            />
+            <Check
+              label="Cerrar pestañas al cerrar aplicación"
+              checked={draft.closeExtensionTabsOnAppClose}
+              set={(v) => update("closeExtensionTabsOnAppClose", v)}
+            />
+            <Check
+              label="Cerrar ventanas internas al apagar el monitor"
+              checked={draft.closeInternalWindowsOnMonitorStop}
+              set={(v) => update("closeInternalWindowsOnMonitorStop", v)}
+            />
+            <Check
+              label="Usar navegador predeterminado si la extensión no está disponible"
+              checked={draft.extensionFallback}
+              set={(v) => update("extensionFallback", v)}
+            />
+            <Check
+              label="Volver a abrir una pestaña si se cierra mientras el directo continúa"
+              checked={draft.reopenClosedStreams}
+              set={(v) => update("reopenClosedStreams", v)}
+            />
+            <label>
+              Tiempo antes de reabrir (3–60 segundos)
+              <input
+                type="number"
+                min="3"
+                max="60"
+                value={draft.reopenDelaySeconds}
+                onChange={(e) =>
+                  update(
+                    "reopenDelaySeconds",
+                    Math.min(60, Math.max(3, +e.target.value)),
+                  )
+                }
+              />
+            </label>
+            <label>
+              Máximo de reaperturas por directo (1–10)
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={draft.maxReopensPerStream}
+                onChange={(e) =>
+                  update(
+                    "maxReopensPerStream",
+                    Math.min(10, Math.max(1, +e.target.value)),
+                  )
+                }
+              />
+            </label>
+            <Check
+              label="Preguntar antes de volver a abrir una pestaña cerrada"
+              checked={draft.askBeforeReopen}
+              set={(v) => update("askBeforeReopen", v)}
+            />
+            <Check
+              label="Silenciar las demás pestañas al activar sonido en una"
+              checked={draft.muteOtherInternalTabs}
+              set={(v) => update("muteOtherInternalTabs", v)}
+            />
+            <Check
+              label="Cerrar navegador interno cuando no queden directos"
+              checked={draft.closeInternalBrowserWhenEmpty}
+              set={(v) => update("closeInternalBrowserWhenEmpty", v)}
+            />
+            {draft.browserMode === "default" && (
+              <p className="warning">
+                No es posible detectar ni reabrir automáticamente una pestaña
+                cerrada sin utilizar la extensión del navegador.
+              </p>
+            )}
             <p>
               Las ventanas gestionadas se silencian antes y después de navegar,
               se reutilizan y enfocan sin duplicados.
@@ -712,16 +815,108 @@ function Settings({ state }: { state: AppState }) {
         {category === "Extensión" && (
           <div className="settings-grid">
             <h3>Extensión del navegador</h3>
-            <p>Estado: <b>{state.extension.connected ? "Aplicación conectada" : "Aplicación desconectada"}</b></p>
-            <p>Native Messaging: {state.extension.nativeHostConnected ? "conectado" : "desconectado"}<br/>Navegador: {state.extension.browser ?? "—"}<br/>Versión: {state.extension.extensionVersion ?? "—"}<br/>Protocolo: {state.extension.protocolVersion}<br/>Sesión activa: {state.extension.sessionActive ? "sí" : "no"}<br/>Último heartbeat: {state.extension.lastHeartbeat ?? "—"}<br/>Pestañas administradas: {state.extension.managedTabs}</p>
-            {state.extension.lastError && <p className="error">{state.extension.lastError}</p>}
-            <p>La extensión controla únicamente las pestañas que abre para esta aplicación mientras la aplicación está conectada.</p>
-            <button onClick={()=>void window.api.checkExtension()}>Comprobar conexión</button>
-            <button onClick={()=>void window.api.testExtension()}>Probar apertura</button>
-            <button onClick={()=>void window.api.muteExtensionTabs()}>Silenciar pestañas administradas</button>
-            <button onClick={()=>void window.api.closeExtensionTabs()}>Cerrar pestañas administradas</button>
-            <button onClick={()=>void window.api.open("https://www.twitch.tv/")}>Abrir instrucciones</button>
-            <button onClick={()=>void window.api.copy(JSON.stringify({connected:state.extension.connected,nativeHost:state.extension.nativeHostConnected,browser:state.extension.browser,version:state.extension.extensionVersion,protocol:state.extension.protocolVersion,managedTabs:state.extension.managedTabs,lastError:state.extension.lastError},null,2))}>Copiar diagnóstico</button>
+            <p>
+              Estado:{" "}
+              <b>
+                {state.extension.connected
+                  ? "Aplicación conectada"
+                  : "Aplicación desconectada"}
+              </b>
+            </p>
+            <p>
+              Native Messaging:{" "}
+              {state.extension.nativeHostConnected
+                ? "conectado"
+                : "desconectado"}
+              <br />
+              Navegador: {state.extension.browser ?? "—"}
+              <br />
+              Versión: {state.extension.extensionVersion ?? "—"}
+              <br />
+              Protocolo: {state.extension.protocolVersion}
+              <br />
+              Sesión activa: {state.extension.sessionActive ? "sí" : "no"}
+              <br />
+              Último heartbeat: {state.extension.lastHeartbeat ?? "—"}
+              <br />
+              Pestañas administradas: {state.extension.managedTabs}
+            </p>
+            {state.extension.lastError && (
+              <p className="error">{state.extension.lastError}</p>
+            )}
+            <p>
+              La extensión controla únicamente las pestañas que abre para esta
+              aplicación mientras la aplicación está conectada.
+            </p>
+            <button
+              onClick={async () => {
+                setExtensionCheck("Comprobando…");
+                try {
+                  await Promise.race([
+                    window.api.checkExtension(),
+                    new Promise((_, reject) =>
+                      setTimeout(
+                        () => reject(new Error("Tiempo de espera agotado")),
+                        5000,
+                      ),
+                    ),
+                  ]);
+                  setExtensionCheck("Extensión conectada");
+                } catch (error) {
+                  const text =
+                    error instanceof Error ? error.message : String(error);
+                  setExtensionCheck(
+                    /not found|no registrado|disponible/i.test(text)
+                      ? "El Native Messaging Host no está registrado para Microsoft Edge."
+                      : /unauthorized|autorizado/i.test(text)
+                        ? "ID de extensión no autorizado"
+                        : /timeout|espera/i.test(text)
+                          ? "Tiempo de espera agotado"
+                          : /executable|ejecutable/i.test(text)
+                            ? "Host no ejecutable"
+                            : "Extensión no instalada",
+                  );
+                }
+              }}
+            >
+              Comprobar conexión
+            </button>
+            {extensionCheck && <p>{extensionCheck}</p>}
+            <button onClick={() => void window.api.testExtension()}>
+              Probar apertura
+            </button>
+            <button onClick={() => void window.api.muteExtensionTabs()}>
+              Silenciar pestañas administradas
+            </button>
+            <button onClick={() => void window.api.closeExtensionTabs()}>
+              Cerrar pestañas administradas
+            </button>
+            <button
+              onClick={() => void window.api.open("https://www.twitch.tv/")}
+            >
+              Abrir instrucciones
+            </button>
+            <button
+              onClick={() =>
+                void window.api.copy(
+                  JSON.stringify(
+                    {
+                      connected: state.extension.connected,
+                      nativeHost: state.extension.nativeHostConnected,
+                      browser: state.extension.browser,
+                      version: state.extension.extensionVersion,
+                      protocol: state.extension.protocolVersion,
+                      managedTabs: state.extension.managedTabs,
+                      lastError: state.extension.lastError,
+                    },
+                    null,
+                    2,
+                  ),
+                )
+              }
+            >
+              Copiar diagnóstico
+            </button>
           </div>
         )}
         {category === "Twitch" && (
@@ -782,7 +977,7 @@ function Settings({ state }: { state: AppState }) {
             <pre>
               {JSON.stringify(
                 {
-                  version: "1.0.7",
+                  version: "1.0.8",
                   platform: navigator.platform,
                   monitor: MONITOR_LABELS[state.monitor.status],
                   platforms: draft.platforms,
@@ -794,6 +989,9 @@ function Settings({ state }: { state: AppState }) {
                     scan: Boolean(state.monitor.nextScan),
                     device: state.deviceAuth.status,
                   },
+                  runtime: state.runtime,
+                  internalBrowser: state.internalBrowser,
+                  extensionHeartbeat: state.extension.lastHeartbeat,
                 },
                 null,
                 2,
@@ -804,7 +1002,7 @@ function Settings({ state }: { state: AppState }) {
                 void window.api.copy(
                   JSON.stringify(
                     {
-                      version: "1.0.7",
+                      version: "1.0.8",
                       monitor: state.monitor.status,
                       oauth: state.bot.status,
                       scopes: state.bot.scopes ?? [],

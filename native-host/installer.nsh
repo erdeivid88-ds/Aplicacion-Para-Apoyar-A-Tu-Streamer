@@ -1,6 +1,5 @@
 !macro customInstall
-  ; Los IDs de tienda exactos se inyectan en los manifiestos del canal de distribución.
-  ; La edición portable no pasa por este macro y nunca registra automáticamente.
+  ExecWait '"$INSTDIR\resources\native-host\node.exe" "$INSTDIR\resources\native-host\scripts\native-host-cli.mjs" register --all --extension-id=jnpgebgidkgjmafnbpknialnjhkaigic'
 !macroend
 !macro customUnInstall
   DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\es.vortexstudio.apoyaatustreamer"

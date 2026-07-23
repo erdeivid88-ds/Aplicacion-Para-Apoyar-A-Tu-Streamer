@@ -25,6 +25,8 @@ declare global {
       checkTwitchPermissions: () => Promise<void>;
       saveStreamer: (value: Partial<Streamer>) => Promise<void>;
       deleteStreamer: (id: string) => Promise<void>;
+      retryStream: (id: string) => Promise<void>;
+      cancelReopen: (id: string) => Promise<void>;
       saveSettings: (value: Partial<Settings>) => Promise<void>;
       open: (url: string) => Promise<void>;
       copy: (text: string) => Promise<void>;

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 **/dist/
+native-host/generated/
 dist-electron/
 release/
 coverage/

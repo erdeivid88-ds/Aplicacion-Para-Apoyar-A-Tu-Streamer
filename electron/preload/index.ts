@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld("api", {
   saveStreamer: (value: Partial<Streamer>) =>
     ipcRenderer.invoke("streamer:save", value),
   deleteStreamer: (id: string) => ipcRenderer.invoke("streamer:delete", id),
+  retryStream: (id: string) => ipcRenderer.invoke("streamer:retry-open", id),
+  cancelReopen: (id: string) => ipcRenderer.invoke("streamer:cancel-reopen", id),
   saveSettings: (value: Partial<Settings>) =>
     ipcRenderer.invoke("settings:save", value),
   open: (url: string) => ipcRenderer.invoke("external:open", url),

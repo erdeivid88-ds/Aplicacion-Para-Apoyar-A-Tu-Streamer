@@ -1,6 +1,6 @@
 {
   "name": "apoya-a-tu-streamer",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Monitor y lanzador legítimo de directos de Twitch y Kick",
   "main": "dist-electron/main/index.js",
   "author": "Vortex Studio",
@@ -13,8 +13,11 @@
     "build:extension": "powershell -NoProfile -ExecutionPolicy Bypass -File browser-extension/build.ps1",
     "test:extension": "vitest run src/domain/browser-protocol.test.ts",
     "package:extension": "powershell -NoProfile -ExecutionPolicy Bypass -File browser-extension/package.ps1",
-    "build:native-host": "esbuild native-host/src/index.ts --bundle --platform=node --format=cjs --outfile=native-host/dist/native-host.cjs",
-    "test:native-host": "vitest run native-host/src/framing.test.ts electron/main/browser-extension-client.test.ts",
+    "build:native-host": "esbuild native-host/src/index.ts --bundle --platform=node --format=cjs --outfile=native-host/dist/native-host.cjs && powershell -NoProfile -ExecutionPolicy Bypass -Command \"Copy-Item -Force (Get-Command node.exe).Source native-host/dist/node.exe\"",
+    "test:native-host": "vitest run native-host/src/framing.test.ts native-host/scripts/native-host-cli.test.ts electron/main/browser-extension-client.test.ts",
+    "native-host:register": "node native-host/scripts/native-host-cli.mjs register",
+    "native-host:unregister": "node native-host/scripts/native-host-cli.mjs unregister",
+    "native-host:doctor": "node native-host/scripts/native-host-cli.mjs doctor",
     "build:win": "npm run typecheck && vite build && npm run build:electron && npm run build:extension && npm run build:native-host && electron-builder --win nsis portable --publish never && npm run package:extension",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -66,6 +69,7 @@
       { "from": "native-host/manifests", "to": "native-host/manifests" },
       { "from": "native-host/scripts", "to": "native-host/scripts" },
       { "from": "native-host/native-host.cmd", "to": "native-host/native-host.cmd" },
+      { "from": "native-host/host-config.json", "to": "native-host/host-config.json" },
       { "from": "browser-extension/dist", "to": "browser-extension" }
     ],
     "win": {
