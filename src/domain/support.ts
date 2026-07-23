@@ -2,6 +2,7 @@ import type { AppState } from "./types";
 
 export const SUPPORT_EMAIL = "contacto@vortexstudio.es";
 export const IDS_URL = "https://ids.vortexstudio.es";
+export const TWITCH_DEVELOPER_URL = "https://dev.twitch.tv/console/apps";
 
 export function safeDiagnostic(state: AppState, system: string) {
   return {
@@ -13,6 +14,17 @@ export function safeDiagnostic(state: AppState, system: string) {
     extensionConnected: state.extension.connected,
     connectorConfigured: state.extension.nativeHostConnected,
     protocolVersion: state.extension.protocolVersion,
+    twitchAccountType: state.bot.accountType,
+    twitchOAuthStatus: state.bot.status,
+    twitchLastValidation: state.bot.lastValidation,
+    twitchNextValidation: state.bot.nextValidation,
+    twitchExpiresAt: state.bot.expiresAt,
+    twitchRefreshInProgress: state.bot.refreshInProgress,
+    twitchLastRefreshResult: state.bot.lastRefreshResult,
+    twitchLastErrorStatus: state.bot.lastErrorStatus,
+    twitchLastErrorCategory: state.bot.lastErrorCategory,
+    twitchClientIdMatches: state.bot.clientIdMatches,
+    safeStorageAvailable: state.bot.safeStorageAvailable,
   };
 }
 

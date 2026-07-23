@@ -42,6 +42,7 @@ import {
   defaults,
   type AppState,
   type BotStatus,
+  type BotConnection,
   type Streamer,
   type TwitchAccountType,
 } from "../../src/domain/types";
@@ -68,6 +69,8 @@ let scanController: AbortController | null = null;
 const userClosedForMonitorSession = new Set<string>();
 let extensionClient: BrowserExtensionClient | null = null;
 let systemSuspended = false;
+let authValidationTimer: NodeJS.Timeout | undefined;
+let nextAuthValidation: string | undefined;
 let lastSettingsRevision = 0;
 const reopenState = new Map<
   string,
@@ -341,15 +344,43 @@ async function openStream(s: Streamer) {
     }).show();
 }
 function botStatus(error: unknown): BotStatus {
-  return error instanceof TwitchApiError
-    ? error.status === 401
-      ? "expired"
-      : error.status === 403
-        ? "insufficient-permissions"
-        : error.status === 429
-          ? "rate-limited"
-          : "disconnected"
-    : "disconnected";
+  if (!(error instanceof TwitchApiError)) return "temporarily-unavailable";
+  if (error.category === "reconnect-required" || error.category === "storage") return "reconnect-required";
+  if (error.category === "permissions") return "insufficient-permissions";
+  return "temporarily-unavailable";
+}
+function botWithDiagnostics(connection: BotConnection): BotConnection {
+  return { ...connection, ...auth.diagnostics(), nextValidation: nextAuthValidation };
+}
+async function validateTwitchSession() {
+  if (!auth.hasTokens()) {
+    if (store.get("bot.status") !== "disconnected") {
+      store.set("bot", { status: "disconnected" });
+      emit();
+    }
+    return;
+  }
+  const previousRefresh = auth.diagnostics().lastRefreshAt;
+  store.set("bot", botWithDiagnostics({ ...store.get("bot"), status: auth.needsRefresh() ? "refreshing" : "validating", detail: undefined }));
+  emit();
+  try {
+    store.set("bot", botWithDiagnostics(await auth.validate()));
+    if (auth.diagnostics().lastRefreshAt && previousRefresh !== auth.diagnostics().lastRefreshAt)
+      log("Sesión de Twitch renovada correctamente.");
+  } catch (error) {
+    const status = botStatus(error);
+    store.set("bot", botWithDiagnostics({ ...store.get("bot"), status, detail: error instanceof Error ? error.message : "No se pudo comprobar la cuenta" }));
+    log(status === "reconnect-required" ? "Twitch necesita volver a conectarse." : "No se pudo comprobar temporalmente la cuenta de Twitch.", status === "reconnect-required" ? "warning" : "info");
+  }
+  emit();
+}
+function startAuthValidationTimer() {
+  if (authValidationTimer) return;
+  nextAuthValidation = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  authValidationTimer = setInterval(() => {
+    nextAuthValidation = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    void validateTwitchSession();
+  }, 60 * 60 * 1000);
 }
 function monitorCurrent(generation: number) {
   return (
@@ -680,7 +711,7 @@ function register() {
           emit();
         })
         .then((bot) => {
-          store.set("bot", bot);
+          store.set("bot", botWithDiagnostics(bot));
           store.set("deviceAuth", {
             status: "success",
             accountType: bot.accountType,
@@ -736,6 +767,7 @@ function register() {
     store.set("bot", { status: "disconnected" });
     store.set("deviceAuth", { status: "idle" });
     emit();
+    log("Cuenta de Twitch desconectada manualmente.");
   });
   handle("bot:switch-type", (value) => {
     if (value !== "personal" && value !== "bot")
@@ -747,18 +779,20 @@ function register() {
     emit();
   });
   handle("bot:check", async () => {
-    try {
-      store.set("bot", await auth.validate());
-      emit();
-    } catch (error) {
-      store.set("bot", {
-        ...store.get("bot"),
-        status: botStatus(error),
-        detail: error instanceof Error ? error.message : "Error OAuth",
-      });
-      emit();
-      throw error;
-    }
+    await validateTwitchSession();
+  });
+  handle("bot:update-client-id", (value) => {
+    const request = value as { clientId?: unknown; confirmed?: unknown };
+    if (typeof request.clientId !== "string") throw new Error("Client ID no válido.");
+    const next = request.clientId.trim();
+    if (!/^[a-z0-9]{8,80}$/i.test(next)) throw new Error("El Client ID no parece válido.");
+    const current = store.get("settings.platforms.twitch.clientId")?.trim() ?? "";
+    if (next === current) return;
+    if (auth.hasTokens() && request.confirmed !== true) throw new Error("Cambiar el Client ID desconectará la cuenta de Twitch.");
+    if (auth.hasTokens()) auth.clear();
+    store.set("settings.platforms.twitch.clientId", next);
+    if (auth.hasTokens() === false && current) store.set("bot", { status: "disconnected" });
+    emit();
   });
   handle("streamer:resolve", async (platform, value) => {
     if (
@@ -914,6 +948,13 @@ function register() {
     ] as const)
       if (patch[key] !== undefined)
         (allowed as Record<string, unknown>)[key] = patch[key];
+    if (patch.platforms)
+      if (
+        patch.platforms.twitch?.clientId !== undefined &&
+        patch.platforms.twitch.clientId.trim() !== (store.get("settings.platforms.twitch.clientId")?.trim() ?? "") &&
+        auth.hasTokens()
+      )
+        throw new Error("Cambiar el Client ID requiere confirmación.");
     if (patch.platforms)
       allowed.platforms = {
         ...store.get("settings.platforms"),
@@ -1127,20 +1168,14 @@ app.whenReady().then(async () => {
     )
       void scan(monitorGeneration);
   });
-  try {
-    store.set("bot", await auth.validate());
-  } catch (error) {
-    store.set("bot", {
-      ...store.get("bot"),
-      status: botStatus(error),
-      detail: error instanceof Error ? error.message : undefined,
-    });
-  }
-  emit();
+  startAuthValidationTimer();
+  await validateTwitchSession();
 });
 app.on("before-quit", () => {
   quitting = true;
   auth.cancelDevice();
+  if (authValidationTimer) clearInterval(authValidationTimer);
+  authValidationTimer = undefined;
   void stop(false, true);
   if (store.get("settings.closeExtensionTabsOnAppClose"))
     void extensionClient

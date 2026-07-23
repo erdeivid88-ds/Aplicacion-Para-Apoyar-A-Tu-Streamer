@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld("api", {
   switchTwitchType: (type: TwitchAccountType) =>
     ipcRenderer.invoke("bot:switch-type", type),
   checkTwitchPermissions: () => ipcRenderer.invoke("bot:check"),
+  updateTwitchClientId: (clientId: string, confirmed: boolean) => ipcRenderer.invoke("bot:update-client-id", { clientId, confirmed }),
   saveStreamer: (value: Partial<Streamer>) =>
     ipcRenderer.invoke("streamer:save", value),
   resolveStreamer: (platform: string, value: string) =>

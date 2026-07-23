@@ -11,6 +11,10 @@ export type MonitorStatus =
   | "error";
 export type BotStatus =
   | "connected"
+  | "validating"
+  | "refreshing"
+  | "temporarily-unavailable"
+  | "reconnect-required"
   | "disconnected"
   | "expired"
   | "insufficient-permissions"
@@ -128,6 +132,15 @@ export interface BotConnection {
   scopes?: string[];
   expiresAt?: string;
   detail?: string;
+  lastValidation?: string;
+  nextValidation?: string;
+  refreshInProgress?: boolean;
+  lastRefreshResult?: string;
+  lastRefreshAt?: string;
+  lastErrorStatus?: number;
+  lastErrorCategory?: string;
+  clientIdMatches?: boolean;
+  safeStorageAvailable?: boolean;
 }
 export interface AppState {
   schemaVersion: number;

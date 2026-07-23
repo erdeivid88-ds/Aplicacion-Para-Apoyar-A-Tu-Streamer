@@ -20,6 +20,7 @@ export type StoredTokens = {
   expiresAt: string;
   scopes: string[];
   accountType?: TwitchAccountType;
+  clientId?: string;
 };
 type Secrets = { tokens?: string };
 type PendingDevice = {
@@ -34,6 +35,7 @@ export class TwitchApiError extends Error {
     public status: number,
     message: string,
     public retryAfter?: number,
+    public category: "temporary" | "reconnect-required" | "permissions" | "storage" = status === 401 ? "reconnect-required" : status === 403 ? "permissions" : "temporary",
   ) {
     super(message);
   }
@@ -105,6 +107,12 @@ const wait = (ms: number, signal: AbortSignal) =>
 export class TwitchAuth {
   private secrets = new Store<Secrets>({ name: "secure-tokens" });
   private pending?: PendingDevice;
+  private refreshPromise?: Promise<StoredTokens & { accountType: TwitchAccountType }>;
+  private lastValidation?: string;
+  private lastRefreshResult?: string;
+  private lastRefreshAt?: string;
+  private lastErrorStatus?: number;
+  private lastErrorCategory?: string;
   constructor(private clientId: () => string | undefined) {}
   private save(tokens: StoredTokens) {
     if (!safeStorage.isEncryptionAvailable())
@@ -115,6 +123,7 @@ export class TwitchAuth {
       "tokens",
       safeStorage.encryptString(JSON.stringify(tokens)).toString("base64"),
     );
+    if (!this.read()) throw new TwitchApiError(0, "No se pudo verificar la sesión cifrada.", undefined, "storage");
   }
   clear() {
     this.cancelDevice();
@@ -122,6 +131,14 @@ export class TwitchAuth {
   }
   hasTokens() {
     return Boolean(this.secrets.get("tokens"));
+  }
+  needsRefresh() {
+    try {
+      const tokens = this.read();
+      return Boolean(tokens && shouldRefresh(tokens.expiresAt));
+    } catch {
+      return false;
+    }
   }
   private read():
     (StoredTokens & { accountType: TwitchAccountType }) | undefined {
@@ -134,7 +151,7 @@ export class TwitchAuth {
         ) as StoredTokens,
       );
     } catch {
-      return undefined;
+      throw new TwitchApiError(0, "No se pudo acceder a la sesión guardada.", undefined, "storage");
     }
   }
   currentType() {
@@ -229,6 +246,7 @@ export class TwitchAuth {
             ).toISOString(),
             scopes: data.scope ?? [],
             accountType: pending.accountType,
+            clientId,
           });
           this.pending = undefined;
           return await this.validate();
@@ -273,11 +291,13 @@ export class TwitchAuth {
     this.pending?.controller.abort();
     this.pending = undefined;
   }
-  private async refresh(
+  private async performRefresh(
     tokens: StoredTokens & { accountType: TwitchAccountType },
   ) {
-    const clientId = this.clientId();
+    const clientId = this.clientId()?.trim();
     if (!clientId) throw new TwitchApiError(401, "Falta Client ID.");
+    if (tokens.clientId && tokens.clientId !== clientId)
+      throw new TwitchApiError(401, "El Client ID cambió; es necesario volver a conectar Twitch.");
     const response = await fetch(TWITCH_TOKEN_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -288,11 +308,14 @@ export class TwitchAuth {
       }),
     });
     if (!response.ok) {
-      this.clear();
-      throw await this.responseError(
+      const error = await this.responseError(
         response,
         "El token de Twitch ha caducado.",
       );
+      this.lastErrorStatus = error.status;
+      this.lastErrorCategory = error.category;
+      this.lastRefreshResult = error.category === "reconnect-required" ? "reconnect-required" : "temporary-failure";
+      throw error;
     }
     const json = (await response.json()) as {
       access_token: string;
@@ -300,9 +323,22 @@ export class TwitchAuth {
       expires_in: number;
       scope: string[];
     };
-    const next = refreshedTokens(tokens, json);
+    const next = { ...refreshedTokens(tokens, json), clientId };
     this.save(next);
+    const verified = this.read();
+    if (!verified || verified.accessToken !== next.accessToken || verified.refreshToken !== next.refreshToken)
+      throw new TwitchApiError(0, "No se pudo guardar la sesión renovada.", undefined, "storage");
+    this.lastRefreshResult = "success";
+    this.lastRefreshAt = new Date().toISOString();
     return next;
+  }
+  private refresh(tokens: StoredTokens & { accountType: TwitchAccountType }) {
+    if (!this.refreshPromise) {
+      this.refreshPromise = this.performRefresh(tokens).finally(() => {
+        this.refreshPromise = undefined;
+      });
+    }
+    return this.refreshPromise;
   }
   async accessToken() {
     let tokens = this.read();
@@ -311,20 +347,28 @@ export class TwitchAuth {
     if (shouldRefresh(tokens.expiresAt)) tokens = await this.refresh(tokens);
     return tokens.accessToken;
   }
+  private async forceRefresh() {
+    const tokens = this.read();
+    if (!tokens) throw new TwitchApiError(401, "Cuenta de Twitch desconectada.");
+    return (await this.refresh(tokens)).accessToken;
+  }
+  private async authenticatedFetch(input: string, init: RequestInit = {}) {
+    const request = async (token: string) => fetch(input, { ...init, headers: { ...init.headers, "Client-Id": this.clientId()?.trim() ?? "", Authorization: `Bearer ${token}` } });
+    let response = await request(await this.accessToken());
+    if (response.status === 401) response = await request(await this.forceRefresh());
+    return response;
+  }
   async validate(): Promise<BotConnection> {
     const tokens = this.read();
     if (!tokens)
       throw new TwitchApiError(401, "Cuenta de Twitch desconectada.");
-    const token = await this.accessToken();
-    const response = await fetch("https://id.twitch.tv/oauth2/validate", {
-      headers: { Authorization: `OAuth ${token}` },
-    });
+    let token = await this.accessToken();
+    const request = (value: string) => fetch("https://id.twitch.tv/oauth2/validate", { headers: { Authorization: `OAuth ${value}` } });
+    let response = await request(token);
     if (response.status === 401) {
-      this.clear();
-      throw await this.responseError(
-        response,
-        "El token de Twitch ha caducado.",
-      );
+      token = await this.forceRefresh();
+      response = await request(token);
+      if (response.status === 401) throw new TwitchApiError(401, "Es necesario volver a conectar Twitch.");
     }
     if (!response.ok)
       throw await this.responseError(
@@ -345,7 +389,8 @@ export class TwitchAuth {
         403,
         `Permisos insuficientes: ${missing.join(", ")}`,
       );
-    const user = await this.authenticatedUser(token, data.user_id);
+    const user = await this.authenticatedUser(data.user_id);
+    this.lastValidation = new Date().toISOString();
     return {
       status: "connected",
       accountType: tokens.accountType,
@@ -356,15 +401,9 @@ export class TwitchAuth {
       expiresAt: new Date(Date.now() + data.expires_in * 1000).toISOString(),
     };
   }
-  private async authenticatedUser(token: string, userId: string) {
-    const response = await fetch(
+  private async authenticatedUser(userId: string) {
+    const response = await this.authenticatedFetch(
       `https://api.twitch.tv/helix/users?id=${encodeURIComponent(userId)}`,
-      {
-        headers: {
-          "Client-Id": this.clientId() ?? "",
-          Authorization: `Bearer ${token}`,
-        },
-      },
     );
     if (!response.ok)
       throw await this.responseError(
@@ -386,15 +425,8 @@ export class TwitchAuth {
     return (await this.resolveChannel(login)).id;
   }
   async resolveChannel(login: string) {
-    const token = await this.accessToken();
-    const response = await fetch(
+    const response = await this.authenticatedFetch(
       `https://api.twitch.tv/helix/users?login=${encodeURIComponent(login)}`,
-      {
-        headers: {
-          "Client-Id": this.clientId() ?? "",
-          Authorization: `Bearer ${token}`,
-        },
-      },
     );
     if (!response.ok)
       throw await this.responseError(response, "No se pudo resolver el canal.");
@@ -416,17 +448,10 @@ export class TwitchAuth {
     };
   }
   async checkLive(login: string): Promise<LiveResult> {
-    const token = await this.accessToken();
     const clientId = this.clientId()?.trim();
     if (!clientId) throw new TwitchApiError(401, "Falta Client ID.");
-    const response = await fetch(
+    const response = await this.authenticatedFetch(
       `https://api.twitch.tv/helix/streams?user_login=${encodeURIComponent(login)}`,
-      {
-        headers: {
-          "Client-Id": clientId,
-          Authorization: `Bearer ${token}`,
-        },
-      },
     );
     if (!response.ok)
       throw await this.responseError(
@@ -448,14 +473,11 @@ export class TwitchAuth {
   }
   async send(broadcasterId: string, message: string) {
     const connection = await this.validate();
-    const token = await this.accessToken();
     const senderId = connection.userId ?? "";
     assertAuthenticatedSender(connection.userId ?? "", senderId);
-    const response = await fetch("https://api.twitch.tv/helix/chat/messages", {
+    const response = await this.authenticatedFetch("https://api.twitch.tv/helix/chat/messages", {
       method: "POST",
       headers: {
-        "Client-Id": this.clientId() ?? "",
-        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -483,10 +505,18 @@ export class TwitchAuth {
     } catch {
       /* sin JSON */
     }
+    const normalized = message.toLowerCase();
+    const invalidRefresh = response.status === 400 && /refresh|invalid|revok/.test(normalized);
     return new TwitchApiError(
       response.status,
       message,
       Number(response.headers.get("retry-after") ?? 0),
+      invalidRefresh || response.status === 401 ? "reconnect-required" : response.status === 403 ? "permissions" : "temporary",
     );
+  }
+  diagnostics() {
+    let tokens: ReturnType<TwitchAuth["read"]>;
+    try { tokens = this.read(); } catch { tokens = undefined; }
+    return { accountType: tokens?.accountType, expiresAt: tokens?.expiresAt, refreshInProgress: Boolean(this.refreshPromise), lastValidation: this.lastValidation, lastRefreshResult: this.lastRefreshResult, lastRefreshAt: this.lastRefreshAt, lastErrorStatus: this.lastErrorStatus, lastErrorCategory: this.lastErrorCategory, clientIdMatches: Boolean(tokens && (!tokens.clientId || tokens.clientId === this.clientId()?.trim())), safeStorageAvailable: safeStorage.isEncryptionAvailable() };
   }
 }

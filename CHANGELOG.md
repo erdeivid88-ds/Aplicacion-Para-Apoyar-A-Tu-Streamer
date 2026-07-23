@@ -2,6 +2,10 @@
 
 ## 1.1.0
 
+- Corrige la sesión OAuth de Twitch con renovación atómica single-flight, rotación segura del refresh token y reintento único tras 401.
+- Conserva la sesión ante red, 429 y errores 5xx; diferencia validación, renovación, indisponibilidad temporal y reconexión necesaria.
+- Añade validación horaria única en el proceso principal, diagnóstico OAuth seguro y confirmación para cambios reales de Client ID.
+- Recupera desde la v1.0.7 la guía para crear una aplicación pública en Twitch Developer Console y la adapta a Plataformas, onboarding y Ayuda.
 - Limita Vortex IDs a contextos donde se solicita una ID y lo elimina de Kick general y Ajustes avanzados.
 - Añade Ayuda y soporte, informes por correo con plantilla segura y diagnóstico copiable sin secretos.
 - Incorpora un asistente local para Chrome y Edge con detección, registro HKCU mediante IPC y comprobación por ping.

@@ -30,6 +30,7 @@ declare global {
       openTwitchDevice: () => Promise<void>;
       switchTwitchType: (type: TwitchAccountType) => Promise<void>;
       checkTwitchPermissions: () => Promise<void>;
+      updateTwitchClientId: (clientId: string, confirmed: boolean) => Promise<void>;
       saveStreamer: (value: Partial<Streamer>) => Promise<void>;
       resolveStreamer: (
         platform: Platform,

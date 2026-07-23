@@ -37,6 +37,12 @@ describe("experiencia pública 1.1.0", () => {
     expect(app).toContain("revision.current");
     expect(app).toContain("550");
   });
+  it("recupera la guía de Twitch 1.0.7 en las ubicaciones públicas", async () => {
+    const app = await readFile("src/ui/App.tsx", "utf8");
+    for (const text of ["Crear una aplicación en Twitch", "Twitch Developer Console", "Público", "Device Code Flow", "No pegues aquí un Client Secret", "¿Cómo consigo mi Client ID?", "Ver cómo crear la aplicación de Twitch"]) expect(app).toContain(text);
+    expect(app).not.toContain("https://dev.twitch.tv/console/apps");
+    expect(app.match(/<TwitchGuideButton/g)?.length).toBeGreaterThanOrEqual(4);
+  });
   it("incluye accesibilidad, temas y responsive sin overflow horizontal", async () => {
     const [app, css] = await Promise.all([
       readFile("src/ui/App.tsx", "utf8"),

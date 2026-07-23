@@ -13,6 +13,7 @@ import {
   IDS_URL,
   safeDiagnostic,
   SUPPORT_EMAIL,
+  TWITCH_DEVELOPER_URL,
 } from "../domain/support";
 import {
   Alert,
@@ -690,6 +691,14 @@ function IdHelp() {
   );
 }
 
+function TwitchGuideButton({ label = "¿Cómo consigo mi Client ID?" }: { label?: string }) {
+  const [open, setOpen] = useState(false);
+  return <>{<button onClick={() => setOpen(true)}>{label}</button>}{open && <TwitchGuide close={() => setOpen(false)} />}</>;
+}
+function TwitchGuide({ close }: { close: () => void }) {
+  return <div className="backdrop"><div className="modal installer-modal" role="dialog" aria-modal="true" aria-labelledby="twitch-guide-title"><button className="skip" onClick={close}>Cerrar</button><h2 id="twitch-guide-title">Crear una aplicación en Twitch</h2><p>Para conectar tu cuenta necesitas crear una aplicación gratuita en Twitch Developer Console. Solo tendrás que hacerlo una vez.</p><Alert tone="warning" title="Importante">No pegues aquí un Client Secret. Apoya a tu Streamer solo necesita el Client ID.</Alert><ol className="guide-steps"><li>Abre Twitch Developer Console e inicia sesión con tu cuenta.</li><li>Entra en Aplicaciones y registra una nueva.</li><li>Escribe un nombre reconocible, por ejemplo <code>Apoya a tu Streamer</code>.</li><li>Selecciona una categoría apropiada y el tipo de cliente <b>Público</b>.</li><li>Guarda la aplicación y copia el Client ID.</li><li>Vuelve a Apoya a tu Streamer, pégalo y pulsa “Conectar cuenta”.</li><li>Completa el Device Code Flow en la página oficial de Twitch.</li></ol><button className="primary" onClick={() => void window.api.open(TWITCH_DEVELOPER_URL)}>Abrir Twitch Developer Console</button><details><summary>Detalles técnicos</summary><p>El Client ID identifica la aplicación y no es una contraseña. Este flujo no necesita Client Secret, localhost ni Redirect URI. La contraseña se introduce únicamente en Twitch y nunca en esta aplicación.</p></details></div></div>;
+}
+
 function Platforms({ state }: { state: AppState }) {
   const twitch = state.settings.platforms.twitch;
   const [clientId, setClientId] = useState(twitch.clientId ?? "");
@@ -698,13 +707,8 @@ function Platforms({ state }: { state: AppState }) {
   );
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (clientId !== (twitch.clientId ?? ""))
-        void window.api.saveSettings({
-          platforms: {
-            ...state.settings.platforms,
-            twitch: { ...twitch, clientId },
-          },
-        });
+      if (state.bot.status === "disconnected" && clientId.trim() !== (twitch.clientId ?? "").trim() && /^[a-z0-9]{8,80}$/i.test(clientId.trim()))
+        void window.api.updateTwitchClientId(clientId, false);
     }, 600);
     return () => clearTimeout(timer);
   }, [clientId]);
@@ -734,7 +738,7 @@ function Platforms({ state }: { state: AppState }) {
               {botLabel(state.bot.status)}
             </StatusBadge>
           </div>
-          {state.bot.status === "connected" && (
+          {state.bot.status !== "disconnected" && state.bot.displayName && (
             <div className="account">
               <img src={state.bot.avatarUrl} alt="" />
               <div>
@@ -769,8 +773,12 @@ function Platforms({ state }: { state: AppState }) {
               onChange={(e) => setClientId(e.target.value)}
               placeholder="Pega aquí el Client ID"
             />
-            <small>No necesitas un Client Secret.</small>
+            <small>Identificador público de la aplicación creada en Twitch.</small>
+            <div className="card-actions"><TwitchGuideButton /><button onClick={() => void window.api.open(TWITCH_DEVELOPER_URL)}>Abrir Twitch Developer Console</button></div>
+            {clientId.trim() && !/^[a-z0-9]{8,80}$/i.test(clientId.trim()) && <small className="error">El Client ID no parece válido. Comprueba que has copiado el identificador de la aplicación y no el Client Secret.</small>}
+            {state.bot.status !== "disconnected" && clientId.trim() !== (twitch.clientId ?? "").trim() && <button onClick={() => confirm("Cambiar el Client ID desconectará la cuenta de Twitch. ¿Continuar?") && void window.api.updateTwitchClientId(clientId, true)}>Confirmar cambio de Client ID</button>}
           </label>
+          {!twitch.clientId?.trim() && <Alert tone="warning" title="Todavía no has configurado el Client ID de Twitch."><div className="card-actions"><TwitchGuideButton label="Ver instrucciones" /><button onClick={() => void window.api.open(TWITCH_DEVELOPER_URL)}>Abrir Twitch Developer Console</button></div></Alert>}
           <label className="field">
             Cuenta que enviará mensajes
             <select
@@ -792,9 +800,10 @@ function Platforms({ state }: { state: AppState }) {
               Conectar cuenta
             </button>
             <button onClick={() => void window.api.checkTwitchPermissions()}>
-              Comprobar conexión
+              Comprobar ahora
             </button>
-            {state.bot.status === "connected" && (
+            {state.bot.status === "reconnect-required" && <button className="primary" onClick={() => void window.api.connectTwitch(accountType)}>Reconectar</button>}
+            {state.bot.status !== "disconnected" && (
               <button
                 className="danger-text"
                 onClick={() =>
@@ -806,8 +815,9 @@ function Platforms({ state }: { state: AppState }) {
               </button>
             )}
           </div>
+          <div className="meta"><span>Última comprobación</span><b>{state.bot.lastValidation ? relativeTime(state.bot.lastValidation) : "Pendiente"}</b><span>Expiración aproximada</span><b>{state.bot.expiresAt ? relativeTime(state.bot.expiresAt) : "No disponible"}</b></div>
           {state.bot.detail && (
-            <Alert tone="error" title="Twitch necesita atención">
+            <Alert tone={state.bot.status === "temporarily-unavailable" ? "info" : "error"} title={state.bot.status === "temporarily-unavailable" ? "No se pudo comprobar la cuenta" : "Twitch necesita atención"}>
               {state.bot.detail}
             </Alert>
           )}
@@ -1643,7 +1653,7 @@ function SupportActions({ state, compact = false }: { state: AppState; compact?:
 function HelpContent({ state }: { state: AppState }) {
   return <div className="help-content">
     <div className="help-grid">
-      <Card><h4>Configurar Twitch</h4><p>Añade tu Client ID público y conecta tu cuenta con el inicio seguro de Twitch.</p></Card>
+      <Card><h4>Configurar Twitch</h4><p>Añade tu Client ID público y conecta tu cuenta con el inicio seguro de Twitch.</p><TwitchGuideButton label="Ver cómo crear la aplicación de Twitch" /></Card>
       <Card><h4>Añadir streamers</h4><p>Introduce un login o URL. Twitch completa automáticamente ID, nombre y avatar.</p></Card>
       <Card><h4>Obtener IDs</h4><p>Si una ID no se puede resolver, usa Vortex IDs junto al campo de ID.</p><button onClick={() => void window.api.open(IDS_URL)}>Abrir Vortex IDs</button></Card>
       <Card><h4>Configurar extensión</h4><p>La extensión viene incluida. Usa “Configurar extensión” en Navegador y sigue el asistente para Chrome o Edge.</p></Card>
@@ -1714,12 +1724,13 @@ function Onboarding({ state, go }: { state: AppState; go: (p: Page) => void }) {
         </small>
         <h2 id="onboarding-title">{current.title}</h2>
         <p>{current.text}</p>
-        {step === 1 && (
+         {step === 1 && (
           <div className="choice-row">
             <PlatformMark platform="twitch" />
             <PlatformMark platform="kick" />
           </div>
-        )}
+         )}
+        {step === 2 && <TwitchGuideButton label="Ver cómo crear la aplicación de Twitch" />}
         {step === 3 && (
           <div className="mini-modes">
             <span>↗ Normal</span>
@@ -1763,6 +1774,10 @@ function botLabel(status: AppState["bot"]["status"]) {
   return (
     {
       connected: "Conectado",
+      validating: "Comprobando cuenta…",
+      refreshing: "Renovando sesión…",
+      "temporarily-unavailable": "No se pudo comprobar la cuenta",
+      "reconnect-required": "Es necesario volver a conectar Twitch",
       disconnected: "Desconectado",
       expired: "Token caducado",
       "insufficient-permissions": "Faltan permisos",
