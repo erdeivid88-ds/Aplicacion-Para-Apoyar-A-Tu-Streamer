@@ -886,7 +886,7 @@ main {
   border-radius: var(--radius-sm);
 }
 
-.installer-modal { max-width: 760px; max-height: 90vh; overflow-y: auto; }
+.installer-modal { max-width: 760px; max-height: 90vh; overflow-y: auto; overscroll-behavior: contain; }
 .browser-choice { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 20px 0; }
 .browser-choice button { display: grid; gap: 6px; text-align: left; padding: 18px; }
 .browser-choice button.selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
@@ -894,6 +894,9 @@ main {
 .install-progress li.done { color: var(--success); font-weight: 700; }
 .install-instructions { display: grid; gap: 12px; margin: 16px 0; }
 .install-instructions code { overflow-wrap: anywhere; padding: 10px; border-radius: 8px; background: var(--surface-soft); }
+.development-flow > ol { display: grid; gap: 9px; margin: 0; padding-left: 28px; }
+.extension-path { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.extension-path code { min-width: 0; white-space: normal; word-break: break-all; }
 .support-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .support-actions .alert { flex-basis: 100%; }
 .help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 22px; }

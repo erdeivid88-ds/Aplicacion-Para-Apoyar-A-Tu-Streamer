@@ -1142,34 +1142,59 @@ function ExtensionInstaller({ state, close }: { state: AppState; close: () => vo
   const [message, setMessage] = useState("");
   const [development, setDevelopment] = useState(false);
   const [path, setPath] = useState("");
+  const [extensionId, setExtensionId] = useState("");
   const storeUrl = extensionStoreUrl(browser);
-  useEffect(() => { void window.api.detectBrowsers().then(setDetected); }, []);
+  useEffect(() => {
+    void window.api.detectBrowsers().then(setDetected);
+    void window.api.extensionInfo().then((info) => {
+      setPath(info.path);
+      setExtensionId(info.extensionId);
+    }).catch(() => undefined);
+  }, []);
   const choose = (value: "chrome" | "edge") => {
     setBrowser(value);
     void window.api.saveSettings({ extensionBrowser: value });
   };
   const openDevelopment = async () => {
     setDevelopment(true);
-    const extensionPath = await window.api.developmentExtensionPath();
-    setPath(extensionPath);
-    const opened = await window.api.openExtensionSettings(browser);
-    if (!opened.opened) setMessage(`Copia ${opened.address} y pégala en la barra de direcciones.`);
+    setMessage("");
+    try {
+      const info = await window.api.extensionInfo();
+      setPath(info.path);
+      setExtensionId(info.extensionId);
+    } catch (error) {
+      setStage("error");
+      setMessage(error instanceof Error ? error.message : "No se encontró la carpeta de la extensión. Vuelve a compilar o reinstala la aplicación.");
+    }
   };
   const configure = async () => {
     setStage("configuring"); setMessage("Configurando el conector…");
     try {
-      const value = await window.api.registerNativeHost(browser);
+      if (!/^[a-p]{32}$/.test(extensionId)) throw new Error("ID incorrecto. Debe tener 32 letras minúsculas entre a y p.");
+      const value = await window.api.registerNativeHost(browser, extensionId);
       if (!value.registered) throw new Error("El conector del navegador no está registrado.");
-      setStage("configured"); setMessage("Conector configurado. Ya puedes comprobar la comunicación.");
-    } catch (error) { setStage("error"); setMessage(error instanceof Error ? error.message : "No se pudo configurar el conector."); }
+      setStage("configured"); setMessage("Conector registrado. Comprobando comunicación…");
+      return true;
+    } catch (error) { setStage("error"); setMessage(error instanceof Error ? error.message : "No se pudo configurar el conector."); return false; }
   };
   const check = async () => {
     setStage("checking"); setMessage("Comprobando comunicación…");
     try {
+      if (!/^[a-p]{32}$/.test(extensionId)) throw new Error("ID incorrecto. Debe tener 32 letras minúsculas entre a y p.");
+      const host = await window.api.diagnoseNativeHost(browser, extensionId);
+      if (!host.registered) throw new Error("Host no registrado. Configura el conector para este navegador.");
       await window.api.checkExtension();
       setStage("connected"); setMessage("Extensión conectada y lista para usar.");
       await window.api.saveSettings({ extensionInstallCompleted: true });
-    } catch { setStage("error"); setMessage(`No se recibió respuesta de ${browser === "edge" ? "Microsoft Edge" : "Google Chrome"}. Comprueba que la extensión esté instalada y abierta.`); }
+    } catch (error) {
+      setStage("error");
+      const detail = error instanceof Error ? error.message : "";
+      setMessage(/ID incorrecto|Host no registrado|Tiempo de espera/i.test(detail) ? detail : `No se recibió respuesta de ${browser === "edge" ? "Microsoft Edge" : "Google Chrome"}. Comprueba que la extensión esté instalada y abierta.`);
+    }
+  };
+  const loaded = async () => {
+    setStage("installed"); setMessage("Extensión cargada.");
+    if (await configure()) await check();
   };
   return (
     <div className="backdrop">
@@ -1178,17 +1203,18 @@ function ExtensionInstaller({ state, close }: { state: AppState; close: () => vo
         <h2 id="installer-title">Instalar extensión del navegador</h2>
         <p>Selecciona el navegador donde quieres utilizar Apoya a tu Streamer.</p>
         <div className="browser-choice">
-          {(["chrome", "edge"] as const).map((item) => <button key={item} className={browser === item ? "selected" : ""} onClick={() => choose(item)}><b>{item === "chrome" ? "◉ Google Chrome" : "e Microsoft Edge"}</b><span>{detected[item] ? "Instalado" : "No detectado"}</span><small>{state.extension.browser === item && state.extension.connected ? "Extensión conectada" : "Continuar"}</small></button>)}
+          {(["chrome", "edge"] as const).map((item) => <button key={item} className={browser === item ? "selected" : ""} onClick={() => choose(item)}><b>{item === "chrome" ? "◉ Google Chrome" : "e Microsoft Edge"}</b><span>{detected[item] ? "Navegador instalado" : "Navegador no detectado"}</span><small>{state.extension.browser === item && state.extension.connected ? "Extensión conectada" : "Extensión no comprobada"}</small></button>)}
         </div>
         <ol className="install-progress">
           <li className="done">Navegador seleccionado</li><li className={stage !== "pending" ? "done" : ""}>Extensión instalada</li><li className={["configured","checking","connected"].includes(stage) ? "done" : ""}>Conector registrado</li><li className={stage === "connected" ? "done" : ""}>Comunicación comprobada</li><li className={stage === "connected" ? "done" : ""}>Listo para usar</li>
         </ol>
         {!development ? <>
-          {!storeUrl && <Alert tone="info" title="Extensión todavía no publicada">La tienda oficial aún no está configurada. Puedes instalar la versión de prueba para desarrollo local.</Alert>}
-          {storeUrl && <div className="install-instructions"><p>{browser === "chrome" ? "Pulsa Añadir a Chrome, confirma Añadir extensión y vuelve a la aplicación." : "Pulsa Obtener, confirma la instalación y vuelve a la aplicación."}</p><button className="primary" onClick={() => void window.api.open(storeUrl)}>Abrir tienda</button></div>}
-          <div className="card-actions"><button onClick={() => { setStage("installed"); setMessage("Instalación confirmada. Configura ahora la conexión."); }}>Ya la he instalado</button><button onClick={() => void openDevelopment()}>Instalar versión de prueba</button></div>
-        </> : <div className="install-instructions"><Alert tone="warning" title="Versión de prueba">Activa el modo desarrollador, pulsa “Cargar descomprimida” y selecciona esta carpeta.</Alert><code>{path}</code><div className="card-actions"><button onClick={() => void window.api.copy(path)}>Copiar ruta</button><button onClick={() => void window.api.copy(`${browser}://extensions`)}>Copiar dirección</button><button onClick={() => void openDevelopment()}>Ver instrucciones</button></div></div>}
-        <div className="card-actions"><button className="primary" onClick={() => void configure()}>Configurar conexión</button><button onClick={() => void check()}>Comprobar conexión</button><button onClick={() => void check()}>Reintentar</button></div>
+          {!storeUrl && <Alert tone="info" title="Versión de prueba"><p>La extensión todavía no está disponible en la tienda oficial. Durante las pruebas debes cargarla manualmente desde la carpeta incluida con la aplicación.</p><p>Cuando la extensión se publique en Microsoft Edge Add-ons y Chrome Web Store, este asistente abrirá directamente su página oficial de instalación.</p></Alert>}
+          {storeUrl && <div className="install-instructions"><p>{browser === "chrome" ? "Pulsa Añadir a Chrome, confirma Añadir extensión y vuelve a la aplicación." : "Pulsa Obtener, confirma la instalación y vuelve a la aplicación."}</p><button className="primary" onClick={() => void window.api.open(storeUrl)}>Instalar desde la tienda</button><button onClick={() => { setStage("installed"); setMessage("Extensión instalada. Configura ahora la conexión."); }}>Ya la he instalado</button></div>}
+          {!storeUrl && <div className="card-actions"><button className="primary" onClick={() => void openDevelopment()}>Instalar versión de prueba</button></div>}
+        </> : <div className="install-instructions development-flow"><Alert tone="warning" title="Versión de prueba">Sigue estos pasos en {browser === "edge" ? "Microsoft Edge" : "Google Chrome"}.</Alert><ol><li>Abre {browser === "edge" ? "Microsoft Edge" : "Google Chrome"}.</li><li>Copia la dirección <code>{browser}://extensions</code>.</li><li>Pégala en la barra de direcciones.</li><li>Activa “Modo de desarrollador”.</li><li>Pulsa “{browser === "edge" ? "Cargar desempaquetada" : "Cargar descomprimida"}”.</li><li>Selecciona la carpeta mostrada a continuación.</li></ol><div className="extension-path"><code>{path || "Comprobando carpeta…"}</code><button disabled={!path} onClick={() => void window.api.copy(path)}>Copiar ruta de la extensión</button></div><label className="field">ID de la extensión<input value={extensionId} onChange={(event) => setExtensionId(event.target.value.trim().toLowerCase())} maxLength={32} /><small>Cópialo desde la tarjeta de la extensión si no coincide con el valor mostrado.</small></label><div className="card-actions"><button onClick={() => void window.api.copy(`${browser}://extensions`)}>Copiar dirección</button><button disabled={!path} onClick={() => void window.api.showExtensionFolder()}>Abrir carpeta de la extensión</button><button className="primary" disabled={!path} onClick={() => void loaded()}>Ya la he cargado</button><button onClick={() => void check()}>Comprobar conexión</button></div></div>}
+        {!development && storeUrl && <div className="card-actions"><button className="primary" onClick={() => void configure()}>Configurar conexión</button><button onClick={() => void check()}>Comprobar conexión</button></div>}
+        {stage === "error" && <div className="card-actions"><button onClick={() => void (development ? loaded() : check())}>Reintentar</button></div>}
         {message && <Alert tone={stage === "error" ? "error" : "info"} title={stage === "error" ? "No se pudo completar" : "Estado"}>{message}</Alert>}
         {stage === "error" && <SupportActions state={state} compact />}
         <details><summary>Detalles técnicos</summary><p>El conector se registra para tu usuario de Windows y autoriza únicamente el ID estable de esta extensión.</p></details>

@@ -6,6 +6,8 @@
 - Añade Ayuda y soporte, informes por correo con plantilla segura y diagnóstico copiable sin secretos.
 - Incorpora un asistente público para Chrome y Edge con tienda, versión de prueba, detección, registro HKCU mediante IPC y comprobación por ping.
 - Prepara la extensión para tiendas con iconos, privacidad, permisos documentados y ZIP limpio.
+- Corrige la instalación de prueba para no delegar `edge://` ni `chrome://` a Windows, valida la carpeta incluida y permite abrirla mediante un IPC seguro.
+- Encadena confirmación de carga, validación del ID, registro del conector, diagnóstico y ping con estados visibles.
 - Rediseña por completo la experiencia pública con navegación adaptable, tarjetas visuales y lenguaje natural.
 - Añade onboarding, gestión visual de streamers, secciones propias para Automatizaciones y Navegador, y cronología filtrable.
 - Sustituye Guardar/Descartar por guardado automático validado, con debounce, revisiones, estado y reintento.

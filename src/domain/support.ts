@@ -52,7 +52,19 @@ export function errorReportMailto(state: AppState, system: string) {
 }
 
 export function extensionStoreUrl(browser: "chrome" | "edge") {
-  return browser === "chrome"
+  const configured = browser === "chrome"
     ? CHROME_EXTENSION_STORE_URL
     : EDGE_EXTENSION_STORE_URL;
+  return validExtensionStoreUrl(browser, configured);
+}
+
+export function validExtensionStoreUrl(browser: "chrome" | "edge", configured: string) {
+  if (!configured) return "";
+  try {
+    const url = new URL(configured);
+    const expectedHost = browser === "chrome" ? "chromewebstore.google.com" : "microsoftedge.microsoft.com";
+    return url.protocol === "https:" && url.hostname === expectedHost ? url.href : "";
+  } catch {
+    return "";
+  }
 }

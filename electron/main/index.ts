@@ -52,10 +52,10 @@ import { BrowserExtensionClient } from "./browser-extension-client";
 import { errorReportMailto } from "../../src/domain/support";
 import {
   browserInstallations,
-  developmentExtensionPath,
   diagnoseNativeHost,
   registerNativeHost,
   unregisterNativeHost,
+  validatedExtensionDirectory,
 } from "./extension-installer";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const store = new Store<AppState>({ name: "app-data", defaults });
@@ -635,19 +635,14 @@ function register() {
     extensionClient?.request("close_all_managed_streams"),
   );
   handle("extension:detect-browsers", () => browserInstallations());
-  handle("extension:development-path", () => developmentExtensionPath());
-  handle("extension:open-settings", async (value) => {
-    if (value !== "chrome" && value !== "edge") throw new Error("Navegador no válido.");
-    const address = `${value}://extensions`;
-    try {
-      await shell.openExternal(address);
-      return { opened: true, address };
-    } catch {
-      return { opened: false, address };
-    }
+  handle("browser-extension:info", () => validatedExtensionDirectory());
+  handle("browser-extension:show-folder", async () => {
+    const { manifestPath } = await validatedExtensionDirectory();
+    shell.showItemInFolder(manifestPath);
   });
   handle("extension:register-host", async (value) => {
-    const result = await registerNativeHost(value);
+    const request = value as { browser?: unknown; extensionId?: unknown };
+    const result = await registerNativeHost(request?.browser, request?.extensionId);
     store.set("extension.nativeHostConnected", result.registered);
     emit();
     return result;
@@ -657,7 +652,10 @@ function register() {
     store.set("extension.nativeHostConnected", false);
     emit();
   });
-  handle("extension:diagnose-host", (value) => diagnoseNativeHost(value));
+  handle("extension:diagnose-host", (value) => {
+    const request = value as { browser?: unknown; extensionId?: unknown };
+    return diagnoseNativeHost(request?.browser, request?.extensionId);
+  });
   handle("monitor:start", () => start());
   handle("monitor:stop", () => stop());
   handle("monitor:force-stop", () => stop(true, true));

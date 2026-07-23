@@ -24,7 +24,7 @@ describe("experiencia pública 1.1.0", () => {
   });
   it("separa la instalación pública, la de prueba y el soporte", async () => {
     const app = await readFile("src/ui/App.tsx", "utf8");
-    for (const text of ["Añadir extensión", "Google Chrome", "Microsoft Edge", "Extensión todavía no publicada", "Instalar versión de prueba", "Configurar conexión", "Informar sobre un error", "Copiar diagnóstico seguro"]) expect(app).toContain(text);
+    for (const text of ["Añadir extensión", "Google Chrome", "Microsoft Edge", "La extensión todavía no está disponible en la tienda oficial", "Instalar versión de prueba", "Ya la he cargado", "Informar sobre un error", "Copiar diagnóstico seguro"]) expect(app).toContain(text);
     expect(app.match(/<IdHelp \/>/g)?.length).toBe(1);
   });
   it("guarda automáticamente con debounce y revisiones", async () => {
