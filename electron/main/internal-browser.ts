@@ -1,5 +1,5 @@
 import { BrowserWindow, WebContentsView } from "electron";
-import { validateStreamUrl } from "../../src/domain/stream-url";
+import { inspectKickUrl, validateStreamUrl } from "../../src/domain/stream-url";
 import type { Platform } from "../../src/domain/types";
 export interface InternalTab {
   streamerId: string;
@@ -173,10 +173,12 @@ export class InternalBrowserManager {
       const retry = () => {
         const current = this.tabs.get(input.streamerId);
         if (current && !current.muted)
-          void current.view.webContents.executeJavaScript(
-            kickAudioScript(this.kickVolumes.get(input.streamerId) ?? 1),
-            true,
-          ).catch(() => undefined);
+          void current.view.webContents
+            .executeJavaScript(
+              kickAudioScript(this.kickVolumes.get(input.streamerId) ?? 1),
+              true,
+            )
+            .catch(() => undefined);
       };
       view.webContents.on("did-start-loading", retry);
       view.webContents.on("dom-ready", retry);
@@ -207,6 +209,19 @@ export class InternalBrowserManager {
     tab.view.webContents.setAudioMuted(!shouldUnmute);
     if (!shouldUnmute)
       return { tabMuted: true, playerMuted: undefined, audioConfigured: true };
+    const diagnostic = inspectKickUrl(
+      tab.view.webContents.getURL(),
+      "webContents.getURL",
+    );
+    if (!diagnostic.success)
+      return {
+        tabMuted: tab.view.webContents.isAudioMuted(),
+        playerMuted: undefined,
+        audioConfigured: false,
+        audioAttempted: false,
+        audioSuccess: false,
+        ...diagnostic,
+      };
     const safeVolume = Math.min(1, Math.max(0, volume));
     this.kickVolumes.set(id, safeVolume);
     const player = (await tab.view.webContents.executeJavaScript(
@@ -218,6 +233,9 @@ export class InternalBrowserManager {
       tabMuted: tab.view.webContents.isAudioMuted(),
       playerMuted: player.videoMutedAfter,
       audioConfigured: true,
+      audioAttempted: true,
+      audioSuccess: player.videoMutedAfter === false,
+      ...diagnostic,
     };
   }
   activate(id: string) {

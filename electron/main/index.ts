@@ -30,9 +30,18 @@ import {
   validName,
 } from "../../src/domain/channels";
 import { parseImport } from "../../src/domain/import";
-import { beginMonitorSession, ScanLock, transition } from "../../src/domain/monitor";
+import {
+  beginMonitorSession,
+  ScanLock,
+  transition,
+} from "../../src/domain/monitor";
 import { completedStopState } from "../../src/domain/monitor-control";
-import { streamUrl, validateStreamUrl } from "../../src/domain/stream-url";
+import {
+  inspectKickUrl,
+  streamUrl,
+  type ManagedStreamTarget,
+  validateStreamUrl,
+} from "../../src/domain/stream-url";
 import { validateSettings } from "../../src/domain/settings-ui";
 import { migrateConnectionFrom102 } from "../../src/domain/twitch-account";
 import { migrateSettings110 } from "../../src/domain/migration";
@@ -140,7 +149,11 @@ function migrate() {
         automation.message === DEFAULT_AUTO_MESSAGE
       )
         automation.message = DEFAULT_KICK_AUTO_MESSAGE;
-      if ((raw.schemaVersion ?? 0) < 7 && automation.enabled && !automation.authorized) {
+      if (
+        (raw.schemaVersion ?? 0) < 7 &&
+        automation.enabled &&
+        !automation.authorized
+      ) {
         automation.authorized = true;
         automation.authorizedAt = new Date().toISOString();
       }
@@ -369,6 +382,12 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
         store.get("settings.kickAudioEnabled"),
         store.get("settings.kickInitialVolume"),
       );
+      if (!audio.audioConfigured)
+        log(
+          `El directo está abierto; audio Kick pendiente (${"errorCode" in audio ? audio.errorCode : "KICK_AUDIO_NOT_READY"}).`,
+          "warning",
+          s,
+        );
     } catch (error) {
       log(
         `El directo está abierto, pero no se pudo configurar el reproductor: ${error instanceof Error ? error.message : "error"}.`,
@@ -414,11 +433,36 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
       };
       if (s.platform === "kick") {
         try {
-          audio = await extensionClient.request("configure_audio", {
-            ...opened,
-            enabled: store.get("settings.kickAudioEnabled"),
-            volume: store.get("settings.kickInitialVolume"),
-          });
+          const target = inspectKickUrl(opened?.canonicalUrl, "canonicalUrl");
+          if (
+            !opened?.tabId ||
+            !target.success ||
+            !target.slug ||
+            !target.canonicalUrl
+          ) {
+            audio = {
+              ...audio,
+              audioConfigured: false,
+            };
+            log(
+              `La pestaña está abierta; audio Kick pendiente (${target.errorCode ?? "KICK_AUDIO_TARGET_INVALID"}).`,
+              "warning",
+              s,
+            );
+          } else {
+            const managedTarget: ManagedStreamTarget = {
+              platform: "kick",
+              slug: target.slug,
+              canonicalUrl: target.canonicalUrl,
+              tabId: opened.tabId,
+            };
+            audio = await extensionClient.request("configure_audio", {
+              ...opened,
+              ...managedTarget,
+              enabled: store.get("settings.kickAudioEnabled"),
+              volume: store.get("settings.kickInitialVolume"),
+            });
+          }
         } catch (error) {
           log(
             `La pestaña está abierta, pero no se pudo configurar el reproductor de Kick: ${error instanceof Error ? error.message : "error"}.`,
@@ -459,12 +503,17 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
 }
 function botStatus(error: unknown): BotStatus {
   if (!(error instanceof TwitchApiError)) return "temporarily-unavailable";
-  if (error.category === "reconnect-required" || error.category === "storage") return "reconnect-required";
+  if (error.category === "reconnect-required" || error.category === "storage")
+    return "reconnect-required";
   if (error.category === "permissions") return "insufficient-permissions";
   return "temporarily-unavailable";
 }
 function botWithDiagnostics(connection: BotConnection): BotConnection {
-  return { ...connection, ...auth.diagnostics(), nextValidation: nextAuthValidation };
+  return {
+    ...connection,
+    ...auth.diagnostics(),
+    nextValidation: nextAuthValidation,
+  };
 }
 async function validateTwitchSession() {
   if (!auth.hasTokens()) {
@@ -475,26 +524,54 @@ async function validateTwitchSession() {
     return;
   }
   const previousRefresh = auth.diagnostics().lastRefreshAt;
-  store.set("bot", botWithDiagnostics({ ...store.get("bot"), status: auth.needsRefresh() ? "refreshing" : "validating", detail: undefined }));
+  store.set(
+    "bot",
+    botWithDiagnostics({
+      ...store.get("bot"),
+      status: auth.needsRefresh() ? "refreshing" : "validating",
+      detail: undefined,
+    }),
+  );
   emit();
   try {
     store.set("bot", botWithDiagnostics(await auth.validate()));
-    if (auth.diagnostics().lastRefreshAt && previousRefresh !== auth.diagnostics().lastRefreshAt)
+    if (
+      auth.diagnostics().lastRefreshAt &&
+      previousRefresh !== auth.diagnostics().lastRefreshAt
+    )
       log("Sesión de Twitch renovada correctamente.");
   } catch (error) {
     const status = botStatus(error);
-    store.set("bot", botWithDiagnostics({ ...store.get("bot"), status, detail: error instanceof Error ? error.message : "No se pudo comprobar la cuenta" }));
-    log(status === "reconnect-required" ? "Twitch necesita volver a conectarse." : "No se pudo comprobar temporalmente la cuenta de Twitch.", status === "reconnect-required" ? "warning" : "info");
+    store.set(
+      "bot",
+      botWithDiagnostics({
+        ...store.get("bot"),
+        status,
+        detail:
+          error instanceof Error
+            ? error.message
+            : "No se pudo comprobar la cuenta",
+      }),
+    );
+    log(
+      status === "reconnect-required"
+        ? "Twitch necesita volver a conectarse."
+        : "No se pudo comprobar temporalmente la cuenta de Twitch.",
+      status === "reconnect-required" ? "warning" : "info",
+    );
   }
   emit();
 }
 function startAuthValidationTimer() {
   if (authValidationTimer) return;
   nextAuthValidation = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-  authValidationTimer = setInterval(() => {
-    nextAuthValidation = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    void validateTwitchSession();
-  }, 60 * 60 * 1000);
+  authValidationTimer = setInterval(
+    () => {
+      nextAuthValidation = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      void validateTwitchSession();
+    },
+    60 * 60 * 1000,
+  );
 }
 function monitorCurrent(generation: number) {
   return (
@@ -512,7 +589,11 @@ async function automate(s: Streamer, generation: number) {
     store.get("monitor.monitorSessionId"),
   );
   s.automationRuntime = decision.runtime;
-  if (decision.reason === "unauthorized" && s.automation.enabled && s.platform === "twitch")
+  if (
+    decision.reason === "unauthorized" &&
+    s.automation.enabled &&
+    s.platform === "twitch"
+  )
     store.set("bot.status", "unauthorized-channel");
   if (!decision.send) return;
   if (
@@ -529,7 +610,8 @@ async function automate(s: Streamer, generation: number) {
       s.externalId = broadcasterId;
       store.set("bot.status", "connected");
     } else {
-      if (!s.externalId) throw new Error("Falta la ID oficial del canal de Kick.");
+      if (!s.externalId)
+        throw new Error("Falta la ID oficial del canal de Kick.");
       await kickAuth.send(s.externalId, sanitizeMessage(s.automation.message));
       store.set("kick.status", "connected");
     }
@@ -853,7 +935,10 @@ function register() {
   });
   handle("extension:register-host", async (value) => {
     const request = value as { browser?: unknown; extensionId?: unknown };
-    const result = await registerNativeHost(request?.browser, request?.extensionId);
+    const result = await registerNativeHost(
+      request?.browser,
+      request?.extensionId,
+    );
     store.set("extension.nativeHostConnected", result.registered);
     emit();
     return result;
@@ -968,10 +1053,17 @@ function register() {
     developerUrl: KICK_DEVELOPER_URL,
   }));
   handle("kick:save-configuration", (value) => {
-    const input = value as { clientId?: unknown; clientSecret?: unknown; redirectUri?: unknown };
+    const input = value as {
+      clientId?: unknown;
+      clientSecret?: unknown;
+      redirectUri?: unknown;
+    };
     if (input.redirectUri !== KICK_REDIRECT_URI)
       throw new Error("La Redirect URI no coincide con la registrada.");
-    if (typeof input.clientId !== "string" || typeof input.clientSecret !== "string")
+    if (
+      typeof input.clientId !== "string" ||
+      typeof input.clientSecret !== "string"
+    )
       throw new Error("Credenciales de Kick no válidas.");
     kickAuth.saveCredentials(input.clientId, input.clientSecret);
     store.set("settings.platforms.kick.clientId", input.clientId.trim());
@@ -979,14 +1071,23 @@ function register() {
     emit();
   });
   handle("kick:connect", async () => {
-    store.set("kick", { ...store.get("kick"), configured: kickAuth.configured(), status: "connecting", detail: undefined });
+    store.set("kick", {
+      ...store.get("kick"),
+      configured: kickAuth.configured(),
+      status: "connecting",
+      detail: undefined,
+    });
     emit();
     try {
       store.set("kick", await kickAuth.connect());
       emit();
       log("Cuenta de Kick conectada mediante OAuth oficial.", "info");
     } catch (error) {
-      store.set("kick", { ...store.get("kick"), status: "error", detail: error instanceof Error ? error.message : "Error OAuth de Kick" });
+      store.set("kick", {
+        ...store.get("kick"),
+        status: "error",
+        detail: error instanceof Error ? error.message : "Error OAuth de Kick",
+      });
       emit();
       throw error;
     }
@@ -996,31 +1097,55 @@ function register() {
     emit();
   });
   handle("kick:test-message", async (streamerId) => {
-    if (typeof streamerId !== "string") throw new Error("Canal de Kick no válido.");
-    const streamer = store.get("streamers").find((item) => item.id === streamerId && item.platform === "kick");
+    if (typeof streamerId !== "string")
+      throw new Error("Canal de Kick no válido.");
+    const streamer = store
+      .get("streamers")
+      .find((item) => item.id === streamerId && item.platform === "kick");
     if (!streamer) throw new Error("No se encontró el canal de Kick.");
-    const resolved = streamer.externalId ? streamer : { ...streamer, ...(await kickAuth.resolveChannel(streamer.normalizedName)) };
-    if (!resolved.externalId) throw new Error("No se pudo resolver broadcaster_user_id.");
-    const messageId = await kickAuth.send(resolved.externalId, sanitizeMessage(resolved.automation.message));
-    log(`Mensaje de prueba de Kick enviado (ID ${messageId}).`, "info", streamer);
+    const resolved = streamer.externalId
+      ? streamer
+      : {
+          ...streamer,
+          ...(await kickAuth.resolveChannel(streamer.normalizedName)),
+        };
+    if (!resolved.externalId)
+      throw new Error("No se pudo resolver broadcaster_user_id.");
+    const messageId = await kickAuth.send(
+      resolved.externalId,
+      sanitizeMessage(resolved.automation.message),
+    );
+    log(
+      `Mensaje de prueba de Kick enviado (ID ${messageId}).`,
+      "info",
+      streamer,
+    );
     return { messageId, broadcasterUserId: resolved.externalId };
   });
   handle("kick:disconnect", () => {
     kickAuth.clearTokens();
-    store.set("kick", { configured: kickAuth.configured(), status: "disconnected" });
+    store.set("kick", {
+      configured: kickAuth.configured(),
+      status: "disconnected",
+    });
     emit();
   });
   handle("bot:update-client-id", (value) => {
     const request = value as { clientId?: unknown; confirmed?: unknown };
-    if (typeof request.clientId !== "string") throw new Error("Client ID no válido.");
+    if (typeof request.clientId !== "string")
+      throw new Error("Client ID no válido.");
     const next = request.clientId.trim();
-    if (!/^[a-z0-9]{8,80}$/i.test(next)) throw new Error("El Client ID no parece válido.");
-    const current = store.get("settings.platforms.twitch.clientId")?.trim() ?? "";
+    if (!/^[a-z0-9]{8,80}$/i.test(next))
+      throw new Error("El Client ID no parece válido.");
+    const current =
+      store.get("settings.platforms.twitch.clientId")?.trim() ?? "";
     if (next === current) return;
-    if (auth.hasTokens() && request.confirmed !== true) throw new Error("Cambiar el Client ID desconectará la cuenta de Twitch.");
+    if (auth.hasTokens() && request.confirmed !== true)
+      throw new Error("Cambiar el Client ID desconectará la cuenta de Twitch.");
     if (auth.hasTokens()) auth.clear();
     store.set("settings.platforms.twitch.clientId", next);
-    if (auth.hasTokens() === false && current) store.set("bot", { status: "disconnected" });
+    if (auth.hasTokens() === false && current)
+      store.set("bot", { status: "disconnected" });
     emit();
   });
   handle("streamer:resolve", async (platform, value) => {
@@ -1036,8 +1161,7 @@ function register() {
       login = checked.login;
     }
     if (!validName(login)) throw new Error("Nombre de canal no válido.");
-    if (platform === "kick")
-      return kickAuth.resolveChannel(login);
+    if (platform === "kick") return kickAuth.resolveChannel(login);
     const user = await auth.resolveChannel(login);
     return {
       externalId: user.id,
@@ -1182,7 +1306,8 @@ function register() {
     if (patch.platforms)
       if (
         patch.platforms.twitch?.clientId !== undefined &&
-        patch.platforms.twitch.clientId.trim() !== (store.get("settings.platforms.twitch.clientId")?.trim() ?? "") &&
+        patch.platforms.twitch.clientId.trim() !==
+          (store.get("settings.platforms.twitch.clientId")?.trim() ?? "") &&
         auth.hasTokens()
       )
         throw new Error("Cambiar el Client ID requiere confirmación.");
@@ -1309,7 +1434,8 @@ function applicationIconPath() {
 }
 function createTray() {
   const icon = nativeImage.createFromPath(applicationIconPath());
-  if (icon.isEmpty()) throw new Error("No se pudo cargar el icono de la aplicación.");
+  if (icon.isEmpty())
+    throw new Error("No se pudo cargar el icono de la aplicación.");
   tray = new Tray(icon);
   tray.setToolTip("Apoya a tu Streamer");
   updateTray();
@@ -1339,7 +1465,10 @@ function updateTray() {
       { type: "separator" },
       {
         label: "Informar sobre un error",
-        click: () => void safeExternal(errorReportMailto(state() as AppState, process.platform)),
+        click: () =>
+          void safeExternal(
+            errorReportMailto(state() as AppState, process.platform),
+          ),
       },
       { type: "separator" },
       {
