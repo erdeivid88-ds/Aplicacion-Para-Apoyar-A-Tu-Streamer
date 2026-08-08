@@ -1,7 +1,7 @@
 declare const chrome: any;
 import { normalizeKickUrl, waitForKickUrl } from "../src/domain/stream-url";
 import { configureManagedKickPlayback } from "../src/domain/kick-playback";
-type ManagedTab = {streamerId:string; platform:"twitch"|"kick"; canonicalUrl:string; tabId:number; streamSessionId:string; monitorSessionId:string; createdAt:number; muted:boolean; createdByIntegration:true};
+import { createManagedTabRegistry, type ManagedTab } from "./managed-tabs";
 const HOST = "es.vortexstudio.apoyaatustreamer";
 const VERSION = 1;
 const MAX_IDS = 1000;
@@ -11,7 +11,6 @@ let appSessionId:string|undefined;
 let lastHeartbeat = 0;
 let watchdog:any;
 const requestIds = new Set<string>();
-const managed = new Map<number, ManagedTab>();
 
 function safeUrl(platform:unknown, value:unknown) {
   if (platform !== "twitch" && platform !== "kick") throw new Error("invalid_platform");
@@ -27,9 +26,11 @@ function safeUrl(platform:unknown, value:unknown) {
   if (u.protocol !== "https:" || u.port || u.username || u.password || u.search || u.hash || !hosts.includes(u.hostname.toLowerCase()) || parts.length !== 1 || !/^[a-zA-Z0-9_]{2,30}$/.test(parts[0])) throw new Error("invalid_url");
   return `https://${platform === "twitch" ? "www.twitch.tv" : "kick.com"}/${parts[0].toLowerCase()}`;
 }
+const registry=createManagedTabRegistry({load:async()=>{const saved=await chrome.storage.session.get(["managedTabsById","managedTabs"]);return saved.managedTabsById??saved.managedTabs;},save:async(items)=>{await chrome.storage.session.set({managedTabsById:items});await chrome.storage.session.remove("managedTabs");},getTab:(tabId)=>chrome.tabs.get(tabId),canonicalize:safeUrl});
+const managed=registry.items;
 async function readyKickTab(tabId:number){let tab:any;const diagnostic=await waitForKickUrl(async()=>{tab=await chrome.tabs.get(tabId);return tab?.url;});if(!diagnostic.success){console.warn("[kick-audio-url]",{source:"tab.url",valueType:typeof tab?.url,hasValue:typeof tab?.url==="string"&&tab.url.length>0,absoluteUrl:false,errorCode:diagnostic.errorCode});throw new Error(diagnostic.errorCode);}return{tab,diagnostic};}
 function stopKickAudio(tabId:number){return chrome.scripting.executeScript({target:{tabId},func:()=>{const page=window as typeof window&{__apoyaKickAudio?:{observer?:MutationObserver;timers:number[];cancelled:boolean}};const control=page.__apoyaKickAudio;if(control){control.cancelled=true;control.observer?.disconnect();control.timers.forEach(clearTimeout);delete page.__apoyaKickAudio;}}}).catch(()=>undefined);}
-function inactive() { applicationConnected=false; appSessionId=undefined; lastHeartbeat=0; requestIds.clear(); clearTimeout(watchdog); watchdog=undefined;for(const item of managed.values())if(item.platform==="kick")void stopKickAudio(item.tabId); }
+function inactive() { const previous=appSessionId;applicationConnected=false; appSessionId=undefined; lastHeartbeat=0; requestIds.clear(); clearTimeout(watchdog); watchdog=undefined;for(const item of managed.values())if(item.platform==="kick")void stopKickAudio(item.tabId);if(previous)void registry.clearSession(previous); }
 function armWatchdog() { clearTimeout(watchdog); watchdog=setTimeout(inactive, 30001); }
 function response(m:any, success:boolean, payload:any={}, error?:string) { nativePort?.postMessage({protocolVersion:VERSION,requestId:m?.requestId ?? "unknown",success,...(success?{payload}:{error:error ?? "rejected"})}); }
 function validate(m:any, handshake=false) {
@@ -38,7 +39,7 @@ function validate(m:any, handshake=false) {
   requestIds.add(m.requestId); if (requestIds.size > MAX_IDS) requestIds.delete(requestIds.values().next().value);
   if (!handshake && (!applicationConnected || m.appSessionId !== appSessionId || Date.now()-lastHeartbeat > 30000)) throw new Error("inactive_session");
 }
-async function exact(m:any) { const tabId=Number(m.payload.tabId); const item=managed.get(tabId); if (!item)throw new Error("not_managed");if(m.action!=="configure_audio"&&(item.streamerId!==m.payload.streamerId||item.platform!==m.payload.platform||item.streamSessionId!==m.payload.streamSessionId||item.monitorSessionId!==m.payload.monitorSessionId))throw new Error("not_managed"); const ready=item.platform==="kick"?await readyKickTab(tabId):undefined;const tab=ready?.tab??await chrome.tabs.get(tabId); if (safeUrl(item.platform,tab.url)!==item.canonicalUrl) throw new Error("url_changed"); return {item,tab,diagnostic:ready?.diagnostic}; }
+async function exact(m:any) { const tabId=Number(m.payload.tabId);const managedTab=await registry.getManagedTab(tabId,m.appSessionId);const {item,tab}=managedTab;if(m.action!=="configure_audio"&&(item.streamerId!==m.payload.streamerId||item.platform!==m.payload.platform||item.streamSessionId!==m.payload.streamSessionId||item.monitorSessionId!==m.payload.monitorSessionId))throw new Error("TAB_NOT_REGISTERED");const ready=item.platform==="kick"?await readyKickTab(tabId):undefined;return{item,tab:ready?.tab??tab,diagnostic:ready?.diagnostic};}
 async function configureKickPlayer(tabId:number, volume:number) {
   const [result]=await chrome.scripting.executeScript({target:{tabId},func:async(configuredVolume:number)=>{
     if(location.protocol!=="https:"||!(location.hostname==="kick.com"||location.hostname==="www.kick.com"))return{playerFound:false,playerMutedBefore:null,playerMutedAfter:null,playerVolumeBefore:null,playerVolumeAfter:null,muteButtonFound:false,muteButtonClicked:false,playbackReady:false,attempts:0,errorCode:"NOT_KICK_TAB"};
@@ -72,11 +73,11 @@ async function onMessage(m:any) {
     if (m.action === "heartbeat") { lastHeartbeat=Date.now(); armWatchdog(); response(m,true,{connected:true}); return; }
     if (m.action === "ping") { response(m,true,{connected:true,extensionVersion:chrome.runtime.getManifest().version,browser:navigator.userAgent.includes("Edg/")?"edge":"chrome",managedTabs:managed.size}); return; }
     if (m.action === "open_stream") {
-      const p=m.payload; const canonicalUrl=safeUrl(p.platform,p.url); for (const item of managed.values()) if(item.streamerId===p.streamerId&&item.streamSessionId===p.streamSessionId){item.monitorSessionId=p.monitorSessionId;await chrome.tabs.get(item.tabId);const updated=await chrome.tabs.update(item.tabId,{muted:p.muted===true});item.muted=Boolean(updated.mutedInfo?.muted);await chrome.storage.session.set({managedTabs:[...managed.values()]});response(m,true,{...item,created:false,muted:item.muted});return;}
-      const tab=await chrome.tabs.create({url:canonicalUrl,active:p.active===true}); if(typeof tab.id!=="number") throw new Error("missing_tab_id"); const updated=p.muted===false?tab:await chrome.tabs.update(tab.id,{muted:true}); const item:ManagedTab={streamerId:p.streamerId,platform:p.platform,canonicalUrl,tabId:tab.id,streamSessionId:p.streamSessionId,monitorSessionId:p.monitorSessionId,createdAt:Date.now(),muted:Boolean(updated.mutedInfo?.muted),createdByIntegration:true}; managed.set(tab.id,item); await chrome.storage.session.set({managedTabs:[...managed.values()]}); response(m,true,{...item,created:true}); return;
+      const p=m.payload; const canonicalUrl=safeUrl(p.platform,p.url); for (const item of managed.values()) if(item.streamerId===p.streamerId){await chrome.tabs.get(item.tabId);const updated=await chrome.tabs.update(item.tabId,{muted:p.muted===true});const adopted=await registry.adopt({...item,muted:Boolean(updated.mutedInfo?.muted)},{appSessionId:m.appSessionId,streamSessionId:p.streamSessionId,monitorSessionId:p.monitorSessionId});response(m,true,{...adopted,created:false,muted:adopted.muted});return;}
+      const tab=await chrome.tabs.create({url:canonicalUrl,active:p.active===true}); if(typeof tab.id!=="number") throw new Error("missing_tab_id"); const updated=p.muted===false?tab:await chrome.tabs.update(tab.id,{muted:true}); const item:ManagedTab={streamerId:p.streamerId,platform:p.platform,canonicalUrl,tabId:tab.id,streamSessionId:p.streamSessionId,monitorSessionId:p.monitorSessionId,appSessionId:m.appSessionId,createdAt:Date.now(),muted:Boolean(updated.mutedInfo?.muted),createdByIntegration:true};await registry.register(item); response(m,true,{...item,created:true}); return;
     }
     if (m.action === "get_stream_tabs") { response(m,true,{tabs:[...managed.values()]}); return; }
-    if (m.action === "close_all_managed_streams") { const ids=[...managed.keys()]; if(ids.length) await chrome.tabs.remove(ids); managed.clear(); await chrome.storage.session.remove("managedTabs"); response(m,true,{closed:ids.length}); return; }
+    if (m.action === "close_all_managed_streams") { const ids=[...managed.keys()]; if(ids.length) await chrome.tabs.remove(ids);for(const id of ids)await registry.remove(id);response(m,true,{closed:ids.length}); return; }
     const {item,tab,diagnostic}=await exact(m);
     if(m.action==="configure_audio"){
       if(item.platform!=="kick"){response(m,true,{tabId:item.tabId,tabMuted:Boolean(tab.mutedInfo?.muted),playerMuted:undefined,audioConfigured:true});return;}
@@ -88,14 +89,14 @@ async function onMessage(m:any) {
     }
     if(m.action==="mute_stream"||m.action==="unmute_stream"){const muted=m.action==="mute_stream";const updated=await chrome.tabs.update(item.tabId,{muted});item.muted=Boolean(updated.mutedInfo?.muted);response(m,true,{tabId:item.tabId,muted:item.muted});return;}
     if(m.action==="focus_stream"){await chrome.windows.update(tab.windowId,{focused:true});await chrome.tabs.update(item.tabId,{active:true});response(m,true,{tabId:item.tabId});return;}
-    if(m.action==="release_stream"){managed.delete(item.tabId);await chrome.storage.session.set({managedTabs:[...managed.values()]});response(m,true,{released:true});return;}
-    if(m.action==="close_stream"){managed.delete(item.tabId);await chrome.tabs.remove(item.tabId);await chrome.storage.session.set({managedTabs:[...managed.values()]});response(m,true,{closed:true});return;}
+    if(m.action==="release_stream"){await registry.remove(item.tabId);response(m,true,{released:true});return;}
+    if(m.action==="close_stream"){await registry.remove(item.tabId);await chrome.tabs.remove(item.tabId);response(m,true,{closed:true});return;}
     throw new Error("unknown_action");
   } catch(e) { response(m,false,{},e instanceof Error?e.message:"rejected"); }
 }
-async function restoreIdentityOnly(){const saved=await chrome.storage.session.get("managedTabs");for(const item of saved.managedTabs??[]){try{const tab=await chrome.tabs.get(item.tabId);if(safeUrl(item.platform,tab.url)===item.canonicalUrl)managed.set(item.tabId,item);}catch{managed.delete(item.tabId);}}await chrome.storage.session.set({managedTabs:[...managed.values()]});}
+async function restoreIdentityOnly(){await registry.restore();}
 function connect(){inactive();try{nativePort=chrome.runtime.connectNative(HOST);nativePort.onMessage.addListener(onMessage);nativePort.onDisconnect.addListener(()=>{nativePort=null;inactive();});}catch{nativePort=null;inactive();void chrome.runtime.lastError;}}
-chrome.tabs.onRemoved.addListener(async(tabId:number)=>{const item=managed.get(tabId);if(!item)return;managed.delete(tabId);await chrome.storage.session.set({managedTabs:[...managed.values()]});if(applicationConnected&&nativePort)nativePort.postMessage({protocolVersion:VERSION,requestId:crypto.randomUUID(),success:true,event:"managed_tab_closed",payload:{streamerId:item.streamerId,platform:item.platform,streamSessionId:item.streamSessionId,monitorSessionId:item.monitorSessionId,reason:"user_closed"}});});
-chrome.tabs.onUpdated.addListener(async(tabId:number,change:any,tab:any)=>{const item=managed.get(tabId);if(!item||!applicationConnected||Date.now()-lastHeartbeat>30000)return;try{if(change.url&&safeUrl(item.platform,tab.url)!==item.canonicalUrl){managed.delete(tabId);return;}if(item.muted&&!tab.mutedInfo?.muted)await chrome.tabs.update(tabId,{muted:true});}catch{managed.delete(tabId);}});
+chrome.tabs.onRemoved.addListener(async(tabId:number)=>{const item=managed.get(tabId);if(!item)return;await registry.remove(tabId);if(applicationConnected&&nativePort)nativePort.postMessage({protocolVersion:VERSION,requestId:crypto.randomUUID(),success:true,event:"managed_tab_closed",payload:{streamerId:item.streamerId,platform:item.platform,streamSessionId:item.streamSessionId,monitorSessionId:item.monitorSessionId,reason:"user_closed"}});});
+chrome.tabs.onUpdated.addListener(async(tabId:number,change:any,tab:any)=>{const item=managed.get(tabId);if(!item||!applicationConnected||Date.now()-lastHeartbeat>30000)return;try{if(change.url&&safeUrl(item.platform,tab.url)!==item.canonicalUrl){await registry.remove(tabId);return;}if(item.muted&&!tab.mutedInfo?.muted)await chrome.tabs.update(tabId,{muted:true});}catch{await registry.remove(tabId);}});
 chrome.runtime.onMessage.addListener((message:any,_sender:any,sendResponse:(value:any)=>void)=>{if(message?.action!=="status")return false;if(!nativePort)connect();sendResponse({connected:applicationConnected&&Date.now()-lastHeartbeat<=30000,monitorStatus:"La aplicación informa su estado mediante heartbeat",managedTabs:managed.size,version:chrome.runtime.getManifest().version});return false;});
 void restoreIdentityOnly().then(connect);

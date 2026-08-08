@@ -28,6 +28,16 @@ describe("integración de audio Kick", () => {
     expect(request).not.toContain("url:");
   });
 
+  it("registra la tab antes de responder open y usa el mismo registro para audio", () => {
+    const worker = readFileSync("browser-extension/service-worker.ts", "utf8");
+    const registerAt = worker.indexOf("await registry.register(item)");
+    const openedAt = worker.indexOf("response(m,true,{...item,created:true}");
+    expect(registerAt).toBeGreaterThan(0);
+    expect(openedAt).toBeGreaterThan(registerAt);
+    expect(worker).toContain("registry.getManagedTab(tabId,m.appSessionId)");
+    expect(worker).not.toContain('throw new Error("not_managed")');
+  });
+
   it("no emite el resumen heredado para Kick y conserva Twitch", () => {
     expect(main).toContain(
       'opened.mode !== "system" && current.platform !== "kick"',
