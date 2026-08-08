@@ -1,8 +1,22 @@
-import { defaults, type AppState, type BrowserMode, type Settings } from "./types";
+import {
+  defaults,
+  type AppState,
+  type BrowserMode,
+  type Settings,
+} from "./types";
 
 export function normalizeBrowserMode(value: unknown): BrowserMode {
+  if (value === "system") return "system";
   if (value === "extension") return "extension";
-  if (value === "internal" || value === "managed") return "internal";
+  if (value === "internal") return "internal";
+  if (value === "managed") return "internal";
+  if (value === "default" || value === "browser" || value === "external")
+    return "system";
+  console.warn("[browser-mode]", {
+    errorCode: "INVALID_BROWSER_MODE",
+    valueType: typeof value,
+    hasValue: value !== undefined && value !== null && value !== "",
+  });
   return "system";
 }
 export function migrateSettings110(raw: Partial<AppState>): Settings {

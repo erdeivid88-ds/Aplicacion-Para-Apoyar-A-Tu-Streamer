@@ -41,7 +41,10 @@ import {
   streamUrl,
   validateStreamUrl,
 } from "../../src/domain/stream-url";
-import { validateSettings } from "../../src/domain/settings-ui";
+import {
+  mergeSettingsPatch,
+  validateSettings,
+} from "../../src/domain/settings-ui";
 import { migrateConnectionFrom102 } from "../../src/domain/twitch-account";
 import { migrateSettings110 } from "../../src/domain/migration";
 import {
@@ -332,11 +335,18 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
   const reusable = internalBrowser.has(s.id);
   const validation = validateStreamUrl(s.platform, s.url);
   console.info("[stream-open]", {
+    stage: "OPEN_STREAM_BROWSER_MODE",
     streamerId: s.id,
     platform: s.platform,
     normalizedLogin: s.normalizedName,
     url: typeof s.url === "string" ? s.url : "(invalid)",
     browserMode,
+    browserModeConfigured: store.get("settings.browserMode"),
+    browserModeResolved: browserMode,
+    extensionConnected: extensionClient?.isConnected() ?? false,
+    extensionBrowser: store.get("settings.extensionBrowser"),
+    openStrategy: browserMode,
+    fallbackUsed: false,
     existingWindow: reusable,
     validated: validation.valid,
     windowRole: browserMode === "internal" ? "managed-stream" : "external",
@@ -410,8 +420,13 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
       ...audio,
     };
   } else if (browserMode === "extension") {
+    console.info("[browser-mode]", {
+      stage: "OPENER_SELECTED",
+      browserMode: "extension",
+    });
     try {
-      if (!extensionClient) throw new Error("extension_not_connected");
+      if (!extensionClient?.isConnected())
+        throw new Error("La extensión no está conectada.");
       if (!extensionClient.supportsManagedRegistry())
         throw new Error(
           "La extensión instalada es anterior; recárgala desde la carpeta indicada por la aplicación.",
@@ -509,15 +524,17 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
         ...audio,
       };
     } catch (error) {
-      if (!store.get("settings.extensionFallback")) throw error;
-      await safeExternal(validation.url);
-      return {
-        accepted: true,
-        mode: "system",
-        managed: false,
-        openedAt: Date.now(),
-        errorCode: "extension_fallback",
-      };
+      console.warn("[browser-mode]", {
+        browserModeConfigured: browserMode,
+        browserModeResolved: "extension",
+        extensionConnected: extensionClient?.isConnected() ?? false,
+        extensionBrowser: store.get("settings.extensionBrowser"),
+        openStrategy: "extension",
+        fallbackUsed: false,
+        fallbackReason:
+          error instanceof Error ? error.message : "extension_error",
+      });
+      throw error;
     }
   } else {
     await safeExternal(validation.url);
@@ -1361,10 +1378,16 @@ function register() {
           ...patch.platforms.kick,
         },
       };
-    const nextSettings = { ...store.get("settings"), ...allowed };
+    const nextSettings = mergeSettingsPatch(store.get("settings"), allowed);
     const validationErrors = validateSettings(nextSettings);
     if (validationErrors.length) throw new Error(validationErrors[0]);
     store.set("settings", nextSettings);
+    if (patch.browserMode !== undefined)
+      console.info("[browser-mode]", {
+        stage: "STORED_BROWSER_MODE",
+        requested: patch.browserMode,
+        stored: store.get("settings.browserMode"),
+      });
     if (
       (patch.browserMode && patch.browserMode !== previousMode) ||
       patch.reopenClosedStreams === false
@@ -1520,6 +1543,10 @@ function updateTray() {
 }
 app.whenReady().then(async () => {
   migrate();
+  console.info("[browser-mode]", {
+    stage: "MAIN_BROWSER_MODE",
+    browserMode: store.get("settings.browserMode"),
+  });
   updater = new AppUpdater({
     packaged: app.isPackaged,
     installable: !process.env.PORTABLE_EXECUTABLE_FILE,

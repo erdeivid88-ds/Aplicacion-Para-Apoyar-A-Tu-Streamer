@@ -1,4 +1,21 @@
 import type { MonitorStatus, Settings } from "./types";
+export function mergeSettingsPatch(
+  current: Settings,
+  patch: Partial<Settings>,
+): Settings {
+  return {
+    ...current,
+    ...patch,
+    platforms: patch.platforms
+      ? {
+          ...current.platforms,
+          ...patch.platforms,
+          twitch: { ...current.platforms.twitch, ...patch.platforms.twitch },
+          kick: { ...current.platforms.kick, ...patch.platforms.kick },
+        }
+      : current.platforms,
+  };
+}
 export const SETTINGS_CATEGORIES = [
   "General",
   "Monitor",
@@ -31,8 +48,10 @@ export function validateSettings(settings: Settings) {
     !settings.platforms.twitch.clientId?.trim()
   )
     errors.push("Client ID vacío.");
-  if(settings.reopenDelaySeconds<3||settings.reopenDelaySeconds>60)errors.push("El tiempo de reapertura debe estar entre 3 y 60 segundos.");
-  if(settings.maxReopensPerStream<1||settings.maxReopensPerStream>10)errors.push("El máximo de reaperturas debe estar entre 1 y 10.");
+  if (settings.reopenDelaySeconds < 3 || settings.reopenDelaySeconds > 60)
+    errors.push("El tiempo de reapertura debe estar entre 3 y 60 segundos.");
+  if (settings.maxReopensPerStream < 1 || settings.maxReopensPerStream > 10)
+    errors.push("El máximo de reaperturas debe estar entre 1 y 10.");
   if (
     !Number.isFinite(settings.kickInitialVolume) ||
     settings.kickInitialVolume < 0 ||

@@ -33,10 +33,14 @@ import {
 function updateStatusText(update: UpdateState) {
   if (update.status === "checking") return "Buscando actualizaciones…";
   if (update.status === "current") return "Estás usando la última versión.";
-  if (update.status === "available") return `Nueva versión ${update.availableVersion} disponible.`;
-  if (update.status === "downloading") return `Descargando actualización… ${update.progress ?? 0} %`;
-  if (update.status === "ready") return `La versión ${update.availableVersion} está lista para instalar.`;
-  if (update.status === "error") return `Error al buscar actualizaciones: ${update.error ?? "error desconocido"}`;
+  if (update.status === "available")
+    return `Nueva versión ${update.availableVersion} disponible.`;
+  if (update.status === "downloading")
+    return `Descargando actualización… ${update.progress ?? 0} %`;
+  if (update.status === "ready")
+    return `La versión ${update.availableVersion} está lista para instalar.`;
+  if (update.status === "error")
+    return `Error al buscar actualizaciones: ${update.error ?? "error desconocido"}`;
   return "Puedes buscar actualizaciones cuando quieras.";
 }
 
@@ -86,7 +90,8 @@ export default function App() {
             {MONITOR_LABELS[state.monitor.status].replace(/^[^\p{L}]+/u, "")}
           </StatusBadge>
           <span className="topbar-brand">
-            <img src={logoLurks} alt="" /> Apoya a tu Streamer <small>{state.updater.version}</small>
+            <img src={logoLurks} alt="" /> Apoya a tu Streamer{" "}
+            <small>{state.updater.version}</small>
           </span>
         </div>
         {page === "Inicio" && <Home state={state} go={setPage} />}{" "}
@@ -622,17 +627,21 @@ function StreamerWizard({ close }: { close: () => void }) {
               </small>
             </label>
             {error && (
-              <><label className="field">
-                ID del canal {platform === "twitch" ? "de Twitch" : "de Kick"}
-                <input
-                  value={manualId}
-                  onChange={(e) => setManualId(e.target.value)}
-                  placeholder="ID numérica"
-                />
-                <small>
-                  Como alternativa, puedes indicar la ID si la búsqueda oficial no está disponible.
-                </small>
-              </label><IdHelp /></>
+              <>
+                <label className="field">
+                  ID del canal {platform === "twitch" ? "de Twitch" : "de Kick"}
+                  <input
+                    value={manualId}
+                    onChange={(e) => setManualId(e.target.value)}
+                    placeholder="ID numérica"
+                  />
+                  <small>
+                    Como alternativa, puedes indicar la ID si la búsqueda
+                    oficial no está disponible.
+                  </small>
+                </label>
+                <IdHelp />
+              </>
             )}
             {error && (
               <Alert tone="error" title="No pudimos verificar el canal">
@@ -701,12 +710,75 @@ function IdHelp() {
   );
 }
 
-function TwitchGuideButton({ label = "¿Cómo consigo mi Client ID?" }: { label?: string }) {
+function TwitchGuideButton({
+  label = "¿Cómo consigo mi Client ID?",
+}: {
+  label?: string;
+}) {
   const [open, setOpen] = useState(false);
-  return <>{<button onClick={() => setOpen(true)}>{label}</button>}{open && <TwitchGuide close={() => setOpen(false)} />}</>;
+  return (
+    <>
+      {<button onClick={() => setOpen(true)}>{label}</button>}
+      {open && <TwitchGuide close={() => setOpen(false)} />}
+    </>
+  );
 }
 function TwitchGuide({ close }: { close: () => void }) {
-  return <div className="backdrop"><div className="modal installer-modal" role="dialog" aria-modal="true" aria-labelledby="twitch-guide-title"><button className="skip" onClick={close}>Cerrar</button><h2 id="twitch-guide-title">Crear una aplicación en Twitch</h2><p>Para conectar tu cuenta necesitas crear una aplicación gratuita en Twitch Developer Console. Solo tendrás que hacerlo una vez.</p><Alert tone="warning" title="Importante">No pegues aquí un Client Secret. Apoya a tu Streamer solo necesita el Client ID.</Alert><ol className="guide-steps"><li>Abre Twitch Developer Console e inicia sesión con tu cuenta.</li><li>Entra en Aplicaciones y registra una nueva.</li><li>Escribe un nombre reconocible, por ejemplo <code>Apoya a tu Streamer</code>.</li><li>Selecciona una categoría apropiada y el tipo de cliente <b>Público</b>.</li><li>Guarda la aplicación y copia el Client ID.</li><li>Vuelve a Apoya a tu Streamer, pégalo y pulsa “Conectar cuenta”.</li><li>Completa el Device Code Flow en la página oficial de Twitch.</li></ol><button className="primary" onClick={() => void window.api.open(TWITCH_DEVELOPER_URL)}>Abrir Twitch Developer Console</button><details><summary>Detalles técnicos</summary><p>El Client ID identifica la aplicación y no es una contraseña. Este flujo no necesita Client Secret, localhost ni Redirect URI. La contraseña se introduce únicamente en Twitch y nunca en esta aplicación.</p></details></div></div>;
+  return (
+    <div className="backdrop">
+      <div
+        className="modal installer-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="twitch-guide-title"
+      >
+        <button className="skip" onClick={close}>
+          Cerrar
+        </button>
+        <h2 id="twitch-guide-title">Crear una aplicación en Twitch</h2>
+        <p>
+          Para conectar tu cuenta necesitas crear una aplicación gratuita en
+          Twitch Developer Console. Solo tendrás que hacerlo una vez.
+        </p>
+        <Alert tone="warning" title="Importante">
+          No pegues aquí un Client Secret. Apoya a tu Streamer solo necesita el
+          Client ID.
+        </Alert>
+        <ol className="guide-steps">
+          <li>Abre Twitch Developer Console e inicia sesión con tu cuenta.</li>
+          <li>Entra en Aplicaciones y registra una nueva.</li>
+          <li>
+            Escribe un nombre reconocible, por ejemplo{" "}
+            <code>Apoya a tu Streamer</code>.
+          </li>
+          <li>
+            Selecciona una categoría apropiada y el tipo de cliente{" "}
+            <b>Público</b>.
+          </li>
+          <li>Guarda la aplicación y copia el Client ID.</li>
+          <li>
+            Vuelve a Apoya a tu Streamer, pégalo y pulsa “Conectar cuenta”.
+          </li>
+          <li>Completa el Device Code Flow en la página oficial de Twitch.</li>
+        </ol>
+        <button
+          className="primary"
+          onClick={() => void window.api.open(TWITCH_DEVELOPER_URL)}
+        >
+          Abrir Twitch Developer Console
+        </button>
+        <details>
+          <summary>Detalles técnicos</summary>
+          <p>
+            El Client ID identifica la aplicación y no es una contraseña. Este
+            flujo no necesita Client Secret, localhost ni Redirect URI. La
+            contraseña se introduce únicamente en Twitch y nunca en esta
+            aplicación.
+          </p>
+        </details>
+      </div>
+    </div>
+  );
 }
 
 function Platforms({ state }: { state: AppState }) {
@@ -722,7 +794,11 @@ function Platforms({ state }: { state: AppState }) {
   const kickRedirect = "http://localhost:17654/oauth/kick/callback";
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (state.bot.status === "disconnected" && clientId.trim() !== (twitch.clientId ?? "").trim() && /^[a-z0-9]{8,80}$/i.test(clientId.trim()))
+      if (
+        state.bot.status === "disconnected" &&
+        clientId.trim() !== (twitch.clientId ?? "").trim() &&
+        /^[a-z0-9]{8,80}$/i.test(clientId.trim())
+      )
         void window.api.updateTwitchClientId(clientId, false);
     }, 600);
     return () => clearTimeout(timer);
@@ -788,12 +864,51 @@ function Platforms({ state }: { state: AppState }) {
               onChange={(e) => setClientId(e.target.value)}
               placeholder="Pega aquí el Client ID"
             />
-            <small>Identificador público de la aplicación creada en Twitch.</small>
-            <div className="card-actions"><TwitchGuideButton /><button onClick={() => void window.api.open(TWITCH_DEVELOPER_URL)}>Abrir Twitch Developer Console</button></div>
-            {clientId.trim() && !/^[a-z0-9]{8,80}$/i.test(clientId.trim()) && <small className="error">El Client ID no parece válido. Comprueba que has copiado el identificador de la aplicación y no el Client Secret.</small>}
-            {state.bot.status !== "disconnected" && clientId.trim() !== (twitch.clientId ?? "").trim() && <button onClick={() => confirm("Cambiar el Client ID desconectará la cuenta de Twitch. ¿Continuar?") && void window.api.updateTwitchClientId(clientId, true)}>Confirmar cambio de Client ID</button>}
+            <small>
+              Identificador público de la aplicación creada en Twitch.
+            </small>
+            <div className="card-actions">
+              <TwitchGuideButton />
+              <button
+                onClick={() => void window.api.open(TWITCH_DEVELOPER_URL)}
+              >
+                Abrir Twitch Developer Console
+              </button>
+            </div>
+            {clientId.trim() && !/^[a-z0-9]{8,80}$/i.test(clientId.trim()) && (
+              <small className="error">
+                El Client ID no parece válido. Comprueba que has copiado el
+                identificador de la aplicación y no el Client Secret.
+              </small>
+            )}
+            {state.bot.status !== "disconnected" &&
+              clientId.trim() !== (twitch.clientId ?? "").trim() && (
+                <button
+                  onClick={() =>
+                    confirm(
+                      "Cambiar el Client ID desconectará la cuenta de Twitch. ¿Continuar?",
+                    ) && void window.api.updateTwitchClientId(clientId, true)
+                  }
+                >
+                  Confirmar cambio de Client ID
+                </button>
+              )}
           </label>
-          {!twitch.clientId?.trim() && <Alert tone="warning" title="Todavía no has configurado el Client ID de Twitch."><div className="card-actions"><TwitchGuideButton label="Ver instrucciones" /><button onClick={() => void window.api.open(TWITCH_DEVELOPER_URL)}>Abrir Twitch Developer Console</button></div></Alert>}
+          {!twitch.clientId?.trim() && (
+            <Alert
+              tone="warning"
+              title="Todavía no has configurado el Client ID de Twitch."
+            >
+              <div className="card-actions">
+                <TwitchGuideButton label="Ver instrucciones" />
+                <button
+                  onClick={() => void window.api.open(TWITCH_DEVELOPER_URL)}
+                >
+                  Abrir Twitch Developer Console
+                </button>
+              </div>
+            </Alert>
+          )}
           <label className="field">
             Cuenta que enviará mensajes
             <select
@@ -817,7 +932,14 @@ function Platforms({ state }: { state: AppState }) {
             <button onClick={() => void window.api.checkTwitchPermissions()}>
               Comprobar ahora
             </button>
-            {state.bot.status === "reconnect-required" && <button className="primary" onClick={() => void window.api.connectTwitch(accountType)}>Reconectar</button>}
+            {state.bot.status === "reconnect-required" && (
+              <button
+                className="primary"
+                onClick={() => void window.api.connectTwitch(accountType)}
+              >
+                Reconectar
+              </button>
+            )}
             {state.bot.status !== "disconnected" && (
               <button
                 className="danger-text"
@@ -830,9 +952,33 @@ function Platforms({ state }: { state: AppState }) {
               </button>
             )}
           </div>
-          <div className="meta"><span>Última comprobación</span><b>{state.bot.lastValidation ? relativeTime(state.bot.lastValidation) : "Pendiente"}</b><span>Expiración aproximada</span><b>{state.bot.expiresAt ? relativeTime(state.bot.expiresAt) : "No disponible"}</b></div>
+          <div className="meta">
+            <span>Última comprobación</span>
+            <b>
+              {state.bot.lastValidation
+                ? relativeTime(state.bot.lastValidation)
+                : "Pendiente"}
+            </b>
+            <span>Expiración aproximada</span>
+            <b>
+              {state.bot.expiresAt
+                ? relativeTime(state.bot.expiresAt)
+                : "No disponible"}
+            </b>
+          </div>
           {state.bot.detail && (
-            <Alert tone={state.bot.status === "temporarily-unavailable" ? "info" : "error"} title={state.bot.status === "temporarily-unavailable" ? "No se pudo comprobar la cuenta" : "Twitch necesita atención"}>
+            <Alert
+              tone={
+                state.bot.status === "temporarily-unavailable"
+                  ? "info"
+                  : "error"
+              }
+              title={
+                state.bot.status === "temporarily-unavailable"
+                  ? "No se pudo comprobar la cuenta"
+                  : "Twitch necesita atención"
+              }
+            >
               {state.bot.detail}
             </Alert>
           )}
@@ -860,16 +1006,46 @@ function Platforms({ state }: { state: AppState }) {
             Redirect URI.
           </p>
           <div className="card-actions">
-            <button onClick={() => setKickWizard("guide")}>Crear aplicación de Kick</button>
-            <button className="primary" disabled={!state.kick.configured || state.kick.status === "connecting"} onClick={() => void window.api.connectKick()}>
-              {state.kick.status === "connecting" ? "Conectando…" : "Conectar cuenta de Kick"}
+            <button onClick={() => setKickWizard("guide")}>
+              Crear aplicación de Kick
             </button>
-            {state.kick.status === "connected" && <button onClick={() => void window.api.disconnectKick()}>Desconectar</button>}
+            <button
+              className="primary"
+              disabled={
+                !state.kick.configured || state.kick.status === "connecting"
+              }
+              onClick={() => void window.api.connectKick()}
+            >
+              {state.kick.status === "connecting"
+                ? "Conectando…"
+                : "Conectar cuenta de Kick"}
+            </button>
+            {state.kick.status === "connected" && (
+              <button onClick={() => void window.api.disconnectKick()}>
+                Desconectar
+              </button>
+            )}
           </div>
-          <StatusBadge tone={state.kick.status === "connected" ? "success" : state.kick.status === "error" ? "warning" : "neutral"}>
-            {state.kick.status === "connected" ? `Conectada: ${state.kick.displayName ?? "Kick"}` : state.kick.configured ? "Aplicación de Kick configurada" : "Sin configurar"}
+          <StatusBadge
+            tone={
+              state.kick.status === "connected"
+                ? "success"
+                : state.kick.status === "error"
+                  ? "warning"
+                  : "neutral"
+            }
+          >
+            {state.kick.status === "connected"
+              ? `Conectada: ${state.kick.displayName ?? "Kick"}`
+              : state.kick.configured
+                ? "Aplicación de Kick configurada"
+                : "Sin configurar"}
           </StatusBadge>
-          {state.kick.detail && <Alert tone="warning" title="Kick necesita atención">{state.kick.detail}</Alert>}
+          {state.kick.detail && (
+            <Alert tone="warning" title="Kick necesita atención">
+              {state.kick.detail}
+            </Alert>
+          )}
           <SettingRow
             title="Habilitar Kick"
             description="Incluye tus canales de Kick en cada comprobación."
@@ -887,23 +1063,150 @@ function Platforms({ state }: { state: AppState }) {
               }
             />
           </SettingRow>
-          {kickWizard && <div className="backdrop"><div className="modal installer-modal" role="dialog" aria-modal="true">
-            <button className="skip" onClick={() => setKickWizard(undefined)}>Cerrar</button>
-            <h2>Crear aplicación de Kick</h2>
-            {kickWizard === "guide" ? <>
-              <p>Kick necesita una aplicación propia para permitir que Apoya a tu Streamer envíe mensajes con tu cuenta. La configuración se realiza una sola vez.</p>
-              <ol className="guide-steps"><li>Pulsa “Abrir Kick Developer”.</li><li>Inicia sesión en Kick.</li><li>Crea una nueva aplicación.</li><li>Pon como nombre: <code>Apoya a tu Streamer</code>.</li><li>Pega la Redirect URI que aparece aquí.</li><li>Guarda la aplicación.</li><li>Copia el Client ID.</li><li>Copia el Client Secret.</li><li>Vuelve a esta pantalla.</li><li>Pulsa “Ya he creado la aplicación”.</li></ol>
-              <label className="field">Nombre recomendado<input readOnly value="Apoya a tu Streamer" /></label>
-              <label className="field">Redirect URI<input readOnly value={kickRedirect} /></label>
-              <div className="card-actions"><button onClick={() => void window.api.open("https://kick.com/settings/developer")}>Abrir Kick Developer</button><button onClick={() => void window.api.copy(kickRedirect)}>Copiar Redirect URI</button><button onClick={() => void window.api.copy("Apoya a tu Streamer")}>Copiar nombre recomendado</button><button className="primary" onClick={() => setKickWizard("credentials")}>Ya he creado la aplicación</button></div>
-            </> : <>
-              <label className="field">Client ID<div className="inline-field"><input value={kickClientId} onChange={e => setKickClientId(e.target.value)} /><button onClick={() => void window.api.paste().then(setKickClientId)}>Pegar</button></div></label>
-              <label className="field">Client Secret<div className="inline-field"><input type={showKickSecret ? "text" : "password"} value={kickSecret} onChange={e => setKickSecret(e.target.value)} /><button onClick={() => void window.api.paste().then(setKickSecret)}>Pegar</button><button onClick={() => setShowKickSecret(!showKickSecret)}>{showKickSecret ? "Ocultar" : "Mostrar"}</button></div></label>
-              <label className="field">Redirect URI<input readOnly value={kickRedirect} /></label>
-              <Alert tone="info" title="Almacenamiento local">El Client Secret se guarda cifrado únicamente en este ordenador y no se envía a Vortex Studio.</Alert>
-              <button className="primary" disabled={!kickClientId.trim() || !kickSecret.trim()} onClick={() => void window.api.saveKickConfiguration(kickClientId.trim(), kickSecret.trim(), kickRedirect).then(() => { setKickSecret(""); setKickWizard(undefined); })}>Guardar configuración</button>
-            </>}
-          </div></div>}
+          {kickWizard && (
+            <div className="backdrop">
+              <div
+                className="modal installer-modal"
+                role="dialog"
+                aria-modal="true"
+              >
+                <button
+                  className="skip"
+                  onClick={() => setKickWizard(undefined)}
+                >
+                  Cerrar
+                </button>
+                <h2>Crear aplicación de Kick</h2>
+                {kickWizard === "guide" ? (
+                  <>
+                    <p>
+                      Kick necesita una aplicación propia para permitir que
+                      Apoya a tu Streamer envíe mensajes con tu cuenta. La
+                      configuración se realiza una sola vez.
+                    </p>
+                    <ol className="guide-steps">
+                      <li>Pulsa “Abrir Kick Developer”.</li>
+                      <li>Inicia sesión en Kick.</li>
+                      <li>Crea una nueva aplicación.</li>
+                      <li>
+                        Pon como nombre: <code>Apoya a tu Streamer</code>.
+                      </li>
+                      <li>Pega la Redirect URI que aparece aquí.</li>
+                      <li>Guarda la aplicación.</li>
+                      <li>Copia el Client ID.</li>
+                      <li>Copia el Client Secret.</li>
+                      <li>Vuelve a esta pantalla.</li>
+                      <li>Pulsa “Ya he creado la aplicación”.</li>
+                    </ol>
+                    <label className="field">
+                      Nombre recomendado
+                      <input readOnly value="Apoya a tu Streamer" />
+                    </label>
+                    <label className="field">
+                      Redirect URI
+                      <input readOnly value={kickRedirect} />
+                    </label>
+                    <div className="card-actions">
+                      <button
+                        onClick={() =>
+                          void window.api.open(
+                            "https://kick.com/settings/developer",
+                          )
+                        }
+                      >
+                        Abrir Kick Developer
+                      </button>
+                      <button
+                        onClick={() => void window.api.copy(kickRedirect)}
+                      >
+                        Copiar Redirect URI
+                      </button>
+                      <button
+                        onClick={() =>
+                          void window.api.copy("Apoya a tu Streamer")
+                        }
+                      >
+                        Copiar nombre recomendado
+                      </button>
+                      <button
+                        className="primary"
+                        onClick={() => setKickWizard("credentials")}
+                      >
+                        Ya he creado la aplicación
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <label className="field">
+                      Client ID
+                      <div className="inline-field">
+                        <input
+                          value={kickClientId}
+                          onChange={(e) => setKickClientId(e.target.value)}
+                        />
+                        <button
+                          onClick={() =>
+                            void window.api.paste().then(setKickClientId)
+                          }
+                        >
+                          Pegar
+                        </button>
+                      </div>
+                    </label>
+                    <label className="field">
+                      Client Secret
+                      <div className="inline-field">
+                        <input
+                          type={showKickSecret ? "text" : "password"}
+                          value={kickSecret}
+                          onChange={(e) => setKickSecret(e.target.value)}
+                        />
+                        <button
+                          onClick={() =>
+                            void window.api.paste().then(setKickSecret)
+                          }
+                        >
+                          Pegar
+                        </button>
+                        <button
+                          onClick={() => setShowKickSecret(!showKickSecret)}
+                        >
+                          {showKickSecret ? "Ocultar" : "Mostrar"}
+                        </button>
+                      </div>
+                    </label>
+                    <label className="field">
+                      Redirect URI
+                      <input readOnly value={kickRedirect} />
+                    </label>
+                    <Alert tone="info" title="Almacenamiento local">
+                      El Client Secret se guarda cifrado únicamente en este
+                      ordenador y no se envía a Vortex Studio.
+                    </Alert>
+                    <button
+                      className="primary"
+                      disabled={!kickClientId.trim() || !kickSecret.trim()}
+                      onClick={() =>
+                        void window.api
+                          .saveKickConfiguration(
+                            kickClientId.trim(),
+                            kickSecret.trim(),
+                            kickRedirect,
+                          )
+                          .then(() => {
+                            setKickSecret("");
+                            setKickWizard(undefined);
+                          })
+                      }
+                    >
+                      Guardar configuración
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </Card>
       </div>
     </section>
@@ -951,7 +1254,7 @@ function Automations({ state }: { state: AppState }) {
                   }
                 />
               </div>
-              {(
+              {
                 <>
                   <SettingRow
                     title="Mensaje"
@@ -1034,15 +1337,25 @@ function Automations({ state }: { state: AppState }) {
                     {s.automationRuntime.paused ? "En pausa" : "Preparado"}
                   </small>
                   {s.platform === "kick" && (
-                    <button onClick={() => void window.api.testKickMessage(s.id).then(
-                      (result) => alert(`Mensaje enviado. ID: ${result.messageId}`),
-                      (error) => alert(error instanceof Error ? error.message : String(error)),
-                    )}>
+                    <button
+                      onClick={() =>
+                        void window.api.testKickMessage(s.id).then(
+                          (result) =>
+                            alert(`Mensaje enviado. ID: ${result.messageId}`),
+                          (error) =>
+                            alert(
+                              error instanceof Error
+                                ? error.message
+                                : String(error),
+                            ),
+                        )
+                      }
+                    >
                       Enviar prueba en Kick
                     </button>
                   )}
                 </>
-              )}
+              }
             </Card>
           ))}
         </div>
@@ -1101,9 +1414,13 @@ function Browser({ state }: { state: AppState }) {
           <button
             className={`mode-card ${state.settings.browserMode === mode.id ? "selected" : ""}`}
             key={mode.id}
-            onClick={() =>
-              void window.api.saveSettings({ browserMode: mode.id })
-            }
+            onClick={() => {
+              console.info("[browser-mode]", {
+                stage: "UI_SELECTED_BROWSER_MODE",
+                browserMode: mode.id,
+              });
+              void window.api.saveSettings({ browserMode: mode.id });
+            }}
           >
             <span className="mode-icon">{mode.icon}</span>
             <StatusBadge
@@ -1199,75 +1516,265 @@ function Browser({ state }: { state: AppState }) {
   );
 }
 
-type InstallerStage = "pending" | "installed" | "configuring" | "configured" | "checking" | "connected" | "error";
-function ExtensionInstaller({ state, close }: { state: AppState; close: () => void }) {
-  const [browser, setBrowser] = useState<"chrome" | "edge">(state.settings.extensionBrowser);
+type InstallerStage =
+  | "pending"
+  | "installed"
+  | "configuring"
+  | "configured"
+  | "checking"
+  | "connected"
+  | "error";
+function ExtensionInstaller({
+  state,
+  close,
+}: {
+  state: AppState;
+  close: () => void;
+}) {
+  const [browser, setBrowser] = useState<"chrome" | "edge">(
+    state.settings.extensionBrowser,
+  );
   const [detected, setDetected] = useState({ chrome: false, edge: false });
-  const [stage, setStage] = useState<InstallerStage>(state.extension.connected ? "connected" : "pending");
+  const [stage, setStage] = useState<InstallerStage>(
+    state.extension.connected ? "connected" : "pending",
+  );
   const [message, setMessage] = useState("");
   const [path, setPath] = useState("");
   const [extensionId, setExtensionId] = useState("");
   useEffect(() => {
     void window.api.detectBrowsers().then(setDetected);
-    void window.api.extensionInfo().then((info) => {
-      setPath(info.path);
-      setExtensionId(info.extensionId);
-    }).catch((error) => {
-      setStage("error");
-      setMessage(error instanceof Error ? error.message : "No se encontró la carpeta de la extensión. Vuelve a compilar o reinstala la aplicación.");
-    });
+    void window.api
+      .extensionInfo()
+      .then((info) => {
+        setPath(info.path);
+        setExtensionId(info.extensionId);
+      })
+      .catch((error) => {
+        setStage("error");
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "No se encontró la carpeta de la extensión. Vuelve a compilar o reinstala la aplicación.",
+        );
+      });
   }, []);
   const choose = (value: "chrome" | "edge") => {
     setBrowser(value);
     void window.api.saveSettings({ extensionBrowser: value });
   };
   const configure = async () => {
-    setStage("configuring"); setMessage("Configurando el conector…");
+    setStage("configuring");
+    setMessage("Configurando el conector…");
     try {
-      if (!/^[a-p]{32}$/.test(extensionId)) throw new Error("ID incorrecto. Debe tener 32 letras minúsculas entre a y p.");
+      if (!/^[a-p]{32}$/.test(extensionId))
+        throw new Error(
+          "ID incorrecto. Debe tener 32 letras minúsculas entre a y p.",
+        );
       const value = await window.api.registerNativeHost(browser, extensionId);
-      if (!value.registered) throw new Error("El conector del navegador no está registrado.");
-      setStage("configured"); setMessage("Conector registrado correctamente.");
+      if (!value.registered)
+        throw new Error("El conector del navegador no está registrado.");
+      setStage("configured");
+      setMessage("Conector registrado correctamente.");
       return true;
-    } catch (error) { setStage("error"); setMessage(error instanceof Error ? error.message : "No se pudo configurar el conector."); return false; }
+    } catch (error) {
+      setStage("error");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo configurar el conector.",
+      );
+      return false;
+    }
   };
   const check = async () => {
-    setStage("checking"); setMessage("Comprobando comunicación…");
+    setStage("checking");
+    setMessage("Comprobando comunicación…");
     try {
-      if (!/^[a-p]{32}$/.test(extensionId)) throw new Error("ID incorrecto. Debe tener 32 letras minúsculas entre a y p.");
+      if (!/^[a-p]{32}$/.test(extensionId))
+        throw new Error(
+          "ID incorrecto. Debe tener 32 letras minúsculas entre a y p.",
+        );
       const host = await window.api.diagnoseNativeHost(browser, extensionId);
-      if (!host.registered) throw new Error("Host no registrado. Configura el conector para este navegador.");
+      if (!host.registered)
+        throw new Error(
+          "Host no registrado. Configura el conector para este navegador.",
+        );
       await window.api.checkExtension();
-      setStage("connected"); setMessage("Extensión conectada y lista para usar.");
+      setStage("connected");
+      setMessage("Extensión conectada y lista para usar.");
       await window.api.saveSettings({ extensionInstallCompleted: true });
     } catch (error) {
       setStage("error");
       const detail = error instanceof Error ? error.message : "";
-      setMessage(/ID incorrecto|Host no registrado|Tiempo de espera/i.test(detail) ? detail : `No se recibió respuesta de ${browser === "edge" ? "Microsoft Edge" : "Google Chrome"}. Comprueba que la extensión esté instalada y abierta.`);
+      setMessage(
+        /ID incorrecto|Host no registrado|Tiempo de espera/i.test(detail)
+          ? detail
+          : `No se recibió respuesta de ${browser === "edge" ? "Microsoft Edge" : "Google Chrome"}. Comprueba que la extensión esté instalada y abierta.`,
+      );
     }
   };
   const loaded = async () => {
-    setStage("installed"); setMessage("Extensión cargada.");
+    setStage("installed");
+    setMessage("Extensión cargada.");
     if (await configure()) await check();
   };
   return (
     <div className="backdrop">
-      <div className="modal installer-modal" role="dialog" aria-modal="true" aria-labelledby="installer-title">
-        <button className="skip" onClick={close}>Cerrar</button>
+      <div
+        className="modal installer-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="installer-title"
+      >
+        <button className="skip" onClick={close}>
+          Cerrar
+        </button>
         <h2 id="installer-title">Configurar extensión</h2>
-        <p>Selecciona el navegador donde quieres utilizar Apoya a tu Streamer.</p>
+        <p>
+          Selecciona el navegador donde quieres utilizar Apoya a tu Streamer.
+        </p>
         <div className="browser-choice">
-          {(["chrome", "edge"] as const).map((item) => <button key={item} className={browser === item ? "selected" : ""} onClick={() => choose(item)}><b>{item === "chrome" ? "◉ Google Chrome" : "e Microsoft Edge"}</b><span>{detected[item] ? "Navegador instalado" : "Navegador no detectado"}</span><small>{state.extension.browser === item && state.extension.connected ? "Extensión conectada" : "Extensión no comprobada"}</small></button>)}
+          {(["chrome", "edge"] as const).map((item) => (
+            <button
+              key={item}
+              className={browser === item ? "selected" : ""}
+              onClick={() => choose(item)}
+            >
+              <b>
+                {item === "chrome" ? "◉ Google Chrome" : "e Microsoft Edge"}
+              </b>
+              <span>
+                {detected[item]
+                  ? "Navegador instalado"
+                  : "Navegador no detectado"}
+              </span>
+              <small>
+                {state.extension.browser === item && state.extension.connected
+                  ? "Extensión conectada"
+                  : "Extensión no comprobada"}
+              </small>
+            </button>
+          ))}
         </div>
         <ol className="install-progress">
-          <li className={detected[browser] ? "done" : ""}>{detected[browser] ? "Navegador detectado" : "Navegador no detectado"}</li><li className={path ? "done" : ""}>Extensión incluida</li><li className={["configured","checking","connected"].includes(stage) ? "done" : ""}>Conector registrado</li><li className={stage === "connected" ? "done" : ""}>{stage === "connected" ? "Extensión conectada" : stage === "checking" ? "Comprobando conexión" : "Extensión no cargada"}</li>
+          <li className={detected[browser] ? "done" : ""}>
+            {detected[browser]
+              ? "Navegador detectado"
+              : "Navegador no detectado"}
+          </li>
+          <li className={path ? "done" : ""}>Extensión incluida</li>
+          <li
+            className={
+              ["configured", "checking", "connected"].includes(stage)
+                ? "done"
+                : ""
+            }
+          >
+            Conector registrado
+          </li>
+          <li className={stage === "connected" ? "done" : ""}>
+            {stage === "connected"
+              ? "Extensión conectada"
+              : stage === "checking"
+                ? "Comprobando conexión"
+                : "Extensión no cargada"}
+          </li>
         </ol>
-        <div className="install-instructions development-flow"><Alert tone="info" title="Extensión incluida">La extensión ya está incluida con Apoya a tu Streamer. Solo tienes que cargarla una vez en el navegador.</Alert><ol><li>Abre {browser === "edge" ? "Microsoft Edge" : "Google Chrome"}.</li><li>Copia la dirección <code>{browser}://extensions</code> y pégala en la barra de direcciones.</li><li>Activa “Modo de desarrollador”.</li><li>Pulsa “{browser === "edge" ? "Cargar desempaquetada" : "Cargar descomprimida"}”.</li><li>Selecciona la carpeta mostrada a continuación.</li></ol><div className="extension-path"><code>{path || "Comprobando carpeta…"}</code><button disabled={!path} onClick={() => void window.api.copy(path)}>Copiar ruta</button></div><label className="field">ID de extensión<input value={extensionId} onChange={(event) => setExtensionId(event.target.value.trim().toLowerCase())} maxLength={32} /><small>Copia el ID que aparece en la tarjeta de la extensión.</small></label><div className="card-actions"><button onClick={() => void window.api.copy(`${browser}://extensions`)}>Copiar dirección</button><button disabled={!path} onClick={() => void window.api.showExtensionFolder()}>Abrir carpeta de la extensión</button><button onClick={() => void configure()}>Registrar conector</button><button className="primary" disabled={!path} onClick={() => void loaded()}>Ya la he cargado</button><button onClick={() => void check()}>Comprobar conexión</button></div></div>
-        {stage === "error" && <div className="card-actions"><button onClick={() => void loaded()}>Reintentar</button></div>}
-        {message && <Alert tone={stage === "error" ? "error" : "info"} title={stage === "error" ? "No se pudo completar" : "Estado"}>{message}</Alert>}
+        <div className="install-instructions development-flow">
+          <Alert tone="info" title="Extensión incluida">
+            La extensión ya está incluida con Apoya a tu Streamer. Solo tienes
+            que cargarla una vez en el navegador.
+          </Alert>
+          <ol>
+            <li>
+              Abre {browser === "edge" ? "Microsoft Edge" : "Google Chrome"}.
+            </li>
+            <li>
+              Copia la dirección <code>{browser}://extensions</code> y pégala en
+              la barra de direcciones.
+            </li>
+            <li>Activa “Modo de desarrollador”.</li>
+            <li>
+              Pulsa “
+              {browser === "edge"
+                ? "Cargar desempaquetada"
+                : "Cargar descomprimida"}
+              ”.
+            </li>
+            <li>Selecciona la carpeta mostrada a continuación.</li>
+          </ol>
+          <div className="extension-path">
+            <code>{path || "Comprobando carpeta…"}</code>
+            <button disabled={!path} onClick={() => void window.api.copy(path)}>
+              Copiar ruta
+            </button>
+          </div>
+          <label className="field">
+            ID de extensión
+            <input
+              value={extensionId}
+              onChange={(event) =>
+                setExtensionId(event.target.value.trim().toLowerCase())
+              }
+              maxLength={32}
+            />
+            <small>
+              Copia el ID que aparece en la tarjeta de la extensión.
+            </small>
+          </label>
+          <div className="card-actions">
+            <button
+              onClick={() => void window.api.copy(`${browser}://extensions`)}
+            >
+              Copiar dirección
+            </button>
+            <button
+              disabled={!path}
+              onClick={() => void window.api.showExtensionFolder()}
+            >
+              Abrir carpeta de la extensión
+            </button>
+            <button onClick={() => void configure()}>Registrar conector</button>
+            <button
+              className="primary"
+              disabled={!path}
+              onClick={() => void loaded()}
+            >
+              Ya la he cargado
+            </button>
+            <button onClick={() => void check()}>Comprobar conexión</button>
+          </div>
+        </div>
+        {stage === "error" && (
+          <div className="card-actions">
+            <button onClick={() => void loaded()}>Reintentar</button>
+          </div>
+        )}
+        {message && (
+          <Alert
+            tone={stage === "error" ? "error" : "info"}
+            title={stage === "error" ? "No se pudo completar" : "Estado"}
+          >
+            {message}
+          </Alert>
+        )}
         {stage === "error" && <SupportActions state={state} compact />}
-        <details><summary>Ver detalles técnicos</summary><p>El conector se registra para tu usuario de Windows y autoriza únicamente el ID indicado.</p></details>
-        {!detected[browser] && <details><summary>No aparece mi navegador</summary><p>Puedes continuar si está instalado en otra ruta. Abre manualmente la página de extensiones y sigue los mismos pasos.</p></details>}
+        <details>
+          <summary>Ver detalles técnicos</summary>
+          <p>
+            El conector se registra para tu usuario de Windows y autoriza
+            únicamente el ID indicado.
+          </p>
+        </details>
+        {!detected[browser] && (
+          <details>
+            <summary>No aparece mi navegador</summary>
+            <p>
+              Puedes continuar si está instalado en otra ruta. Abre manualmente
+              la página de extensiones y sigue los mismos pasos.
+            </p>
+          </details>
+        )}
       </div>
     </div>
   );
@@ -1539,11 +2046,6 @@ function SettingsPage({ state }: { state: AppState }) {
                 </select>
               </SettingRow>
               {bool(
-                "extensionFallback",
-                "Usar el navegador normal si la extensión falla",
-                "Evita perder un directo si Chrome o Edge no están disponibles.",
-              )}
-              {bool(
                 "reopenClosedStreams",
                 "Volver a abrir pestañas cerradas",
                 "Comprueba que el directo continúa antes de abrirlo de nuevo.",
@@ -1710,7 +2212,11 @@ function SettingsPage({ state }: { state: AppState }) {
           {category === "Ayuda y soporte" && <HelpContent state={state} />}
           {category === "Acerca de" && (
             <>
-              <img className="about-logo" src={logoLurks} alt="Logo de Apoya a tu Streamer" />
+              <img
+                className="about-logo"
+                src={logoLurks}
+                alt="Logo de Apoya a tu Streamer"
+              />
               <h3>Apoya a tu Streamer</h3>
               <p>Versión instalada: {state.updater.version}</p>
               <p>
@@ -1719,13 +2225,20 @@ function SettingsPage({ state }: { state: AppState }) {
                   : "Las actualizaciones automáticas están disponibles en la versión instalada."}
               </p>
               <p>{updateStatusText(state.updater)}</p>
-              {state.updater.status === "ready" && state.updater.installable && (
-                <button className="primary" onClick={() => void window.api.installUpdate()}>
-                  Reiniciar e instalar
-                </button>
-              )}
+              {state.updater.status === "ready" &&
+                state.updater.installable && (
+                  <button
+                    className="primary"
+                    onClick={() => void window.api.installUpdate()}
+                  >
+                    Reiniciar e instalar
+                  </button>
+                )}
               <div className="card-actions">
-                <button disabled={state.updater.status === "checking"} onClick={() => void window.api.checkForUpdates()}>
+                <button
+                  disabled={state.updater.status === "checking"}
+                  onClick={() => void window.api.checkForUpdates()}
+                >
                   Buscar actualizaciones
                 </button>
                 <SupportActions state={state} compact />
@@ -1738,35 +2251,137 @@ function SettingsPage({ state }: { state: AppState }) {
   );
 }
 
-function SupportActions({ state, compact = false }: { state: AppState; compact?: boolean }) {
+function SupportActions({
+  state,
+  compact = false,
+}: {
+  state: AppState;
+  compact?: boolean;
+}) {
   const [fallback, setFallback] = useState(false);
   const report = async () => {
-    try { await window.api.open(errorReportMailto(state, navigator.platform)); }
-    catch { setFallback(true); }
+    try {
+      await window.api.open(errorReportMailto(state, navigator.platform));
+    } catch {
+      setFallback(true);
+    }
   };
-  return <div className={compact ? "support-actions compact" : "support-actions"}>
-    <button className="primary" onClick={() => void report()}>Informar sobre un error</button>
-    <button onClick={() => void window.api.copy(JSON.stringify(safeDiagnostic(state, navigator.platform), null, 2))}>Copiar diagnóstico seguro</button>
-    {fallback && <Alert tone="warning" title="No hay un cliente de correo configurado"><p>Copia el correo o la plantilla y pégalos en tu servicio de correo.</p><code>{SUPPORT_EMAIL}</code><div className="card-actions"><button onClick={() => void window.api.copy(SUPPORT_EMAIL)}>Copiar correo</button><button onClick={() => void window.api.copy(errorReportTemplate(state, navigator.platform))}>Copiar plantilla</button></div></Alert>}
-  </div>;
+  return (
+    <div className={compact ? "support-actions compact" : "support-actions"}>
+      <button className="primary" onClick={() => void report()}>
+        Informar sobre un error
+      </button>
+      <button
+        onClick={() =>
+          void window.api.copy(
+            JSON.stringify(safeDiagnostic(state, navigator.platform), null, 2),
+          )
+        }
+      >
+        Copiar diagnóstico seguro
+      </button>
+      {fallback && (
+        <Alert tone="warning" title="No hay un cliente de correo configurado">
+          <p>
+            Copia el correo o la plantilla y pégalos en tu servicio de correo.
+          </p>
+          <code>{SUPPORT_EMAIL}</code>
+          <div className="card-actions">
+            <button onClick={() => void window.api.copy(SUPPORT_EMAIL)}>
+              Copiar correo
+            </button>
+            <button
+              onClick={() =>
+                void window.api.copy(
+                  errorReportTemplate(state, navigator.platform),
+                )
+              }
+            >
+              Copiar plantilla
+            </button>
+          </div>
+        </Alert>
+      )}
+    </div>
+  );
 }
 
 function HelpContent({ state }: { state: AppState }) {
-  return <div className="help-content">
-    <div className="help-grid">
-      <Card><h4>Configurar Twitch</h4><p>Añade tu Client ID público y conecta tu cuenta con el inicio seguro de Twitch.</p><TwitchGuideButton label="Ver cómo crear la aplicación de Twitch" /></Card>
-      <Card><h4>Añadir streamers</h4><p>Introduce un login o URL. Twitch completa automáticamente ID, nombre y avatar.</p></Card>
-      <Card><h4>Obtener IDs</h4><p>Si una ID no se puede resolver, usa Vortex IDs junto al campo de ID.</p><button onClick={() => void window.api.open(IDS_URL)}>Abrir Vortex IDs</button></Card>
-      <Card><h4>Configurar extensión</h4><p>La extensión viene incluida. Usa “Configurar extensión” en Navegador y sigue el asistente para Chrome o Edge.</p></Card>
-      <Card><h4>Solución de problemas</h4><p>Comprueba por separado la extensión, el conector y la comunicación.</p></Card>
+  return (
+    <div className="help-content">
+      <div className="help-grid">
+        <Card>
+          <h4>Configurar Twitch</h4>
+          <p>
+            Añade tu Client ID público y conecta tu cuenta con el inicio seguro
+            de Twitch.
+          </p>
+          <TwitchGuideButton label="Ver cómo crear la aplicación de Twitch" />
+        </Card>
+        <Card>
+          <h4>Añadir streamers</h4>
+          <p>
+            Introduce un login o URL. Twitch completa automáticamente ID, nombre
+            y avatar.
+          </p>
+        </Card>
+        <Card>
+          <h4>Obtener IDs</h4>
+          <p>
+            Si una ID no se puede resolver, usa Vortex IDs junto al campo de ID.
+          </p>
+          <button onClick={() => void window.api.open(IDS_URL)}>
+            Abrir Vortex IDs
+          </button>
+        </Card>
+        <Card>
+          <h4>Configurar extensión</h4>
+          <p>
+            La extensión viene incluida. Usa “Configurar extensión” en Navegador
+            y sigue el asistente para Chrome o Edge.
+          </p>
+        </Card>
+        <Card>
+          <h4>Solución de problemas</h4>
+          <p>
+            Comprueba por separado la extensión, el conector y la comunicación.
+          </p>
+        </Card>
+      </div>
+      <h3>Correo de soporte</h3>
+      <button
+        className="email-link"
+        onClick={() => void window.api.open(`mailto:${SUPPORT_EMAIL}`)}
+      >
+        {SUPPORT_EMAIL}
+      </button>
+      <button onClick={() => void window.api.copy(SUPPORT_EMAIL)}>
+        Copiar correo
+      </button>
+      <SupportActions state={state} />
     </div>
-    <h3>Correo de soporte</h3><button className="email-link" onClick={() => void window.api.open(`mailto:${SUPPORT_EMAIL}`)}>{SUPPORT_EMAIL}</button><button onClick={() => void window.api.copy(SUPPORT_EMAIL)}>Copiar correo</button>
-    <SupportActions state={state} />
-  </div>;
+  );
 }
 
-function HelpSupport({ state, go }: { state: AppState; go: (page: Page) => void }) {
-  return <section><PageHeader title="Ayuda y soporte" description="Guías sencillas, solución de problemas y contacto con Vortex Studio." action={<button onClick={() => go("Navegador")}>Configurar extensión</button>} /><HelpContent state={state} /></section>;
+function HelpSupport({
+  state,
+  go,
+}: {
+  state: AppState;
+  go: (page: Page) => void;
+}) {
+  return (
+    <section>
+      <PageHeader
+        title="Ayuda y soporte"
+        description="Guías sencillas, solución de problemas y contacto con Vortex Studio."
+        action={
+          <button onClick={() => go("Navegador")}>Configurar extensión</button>
+        }
+      />
+      <HelpContent state={state} />
+    </section>
+  );
 }
 
 function Onboarding({ state, go }: { state: AppState; go: (p: Page) => void }) {
@@ -1819,19 +2434,25 @@ function Onboarding({ state, go }: { state: AppState; go: (p: Page) => void }) {
         <button className="skip" onClick={() => void finish()}>
           Omitir guía
         </button>
-        <img className="onboarding-logo" src={logoLurks} alt="Logo de Apoya a tu Streamer" />
+        <img
+          className="onboarding-logo"
+          src={logoLurks}
+          alt="Logo de Apoya a tu Streamer"
+        />
         <small>
           Paso {step + 1} de {steps.length}
         </small>
         <h2 id="onboarding-title">{current.title}</h2>
         <p>{current.text}</p>
-         {step === 1 && (
+        {step === 1 && (
           <div className="choice-row">
             <PlatformMark platform="twitch" />
             <PlatformMark platform="kick" />
           </div>
-         )}
-        {step === 2 && <TwitchGuideButton label="Ver cómo crear la aplicación de Twitch" />}
+        )}
+        {step === 2 && (
+          <TwitchGuideButton label="Ver cómo crear la aplicación de Twitch" />
+        )}
         {step === 3 && (
           <div className="mini-modes">
             <span>↗ Normal</span>
