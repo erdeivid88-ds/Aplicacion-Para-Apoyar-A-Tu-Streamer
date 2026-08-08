@@ -59,6 +59,19 @@ describe("registro persistente de tabs administradas", () => {
       "APP_SESSION_MISMATCH",
     );
   });
+  it("rehidrata directamente desde storage si restore aún no terminó", async () => {
+    const { registry } = setup({ "10": item() });
+    await expect(registry.getManagedTab(10, "app-1")).resolves.toMatchObject({
+      item: { tabId: 10 },
+    });
+  });
+  it("no convierte accidentalmente tabId string a number", async () => {
+    const { registry } = setup();
+    await registry.register(item({ tabId: 123 }));
+    await expect(
+      registry.getManagedTab("123" as unknown as number, "app-1"),
+    ).rejects.toThrow("TAB_NOT_REGISTERED");
+  });
   it("adopta reutilizada y actualiza monitor/session", async () => {
     const { registry } = setup();
     await registry.register(item());

@@ -47,6 +47,19 @@ export function createManagedTabRegistry(dependencies: ManagedTabDependencies) {
     return item;
   }
 
+  async function get(tabId: number) {
+    if (!Number.isInteger(tabId) || tabId <= 0) return undefined;
+    const cached = items.get(tabId);
+    if (cached) return cached;
+    const stored = await dependencies.load();
+    const candidates = Array.isArray(stored)
+      ? stored
+      : Object.values(stored ?? {});
+    const item = candidates.find((candidate) => candidate.tabId === tabId);
+    if (item) items.set(tabId, item);
+    return item;
+  }
+
   async function adopt(
     item: ManagedTab,
     patch: Pick<
@@ -60,7 +73,7 @@ export function createManagedTabRegistry(dependencies: ManagedTabDependencies) {
   async function getManagedTab(tabId: number, appSessionId: string) {
     if (!Number.isInteger(tabId) || tabId <= 0)
       throw new Error("TAB_NOT_REGISTERED");
-    const item = items.get(tabId);
+    const item = await get(tabId);
     if (!item) throw new Error("TAB_NOT_REGISTERED");
     if (item.appSessionId !== appSessionId)
       throw new Error("APP_SESSION_MISMATCH");
@@ -102,6 +115,7 @@ export function createManagedTabRegistry(dependencies: ManagedTabDependencies) {
     items,
     restore,
     register,
+    get,
     adopt,
     getManagedTab,
     remove,

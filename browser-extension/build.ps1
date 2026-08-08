@@ -6,7 +6,9 @@ $worker=Join-Path $dist 'service-worker.js'; $popup=Join-Path $dist 'popup.js'
 & (Join-Path $root 'node_modules/.bin/esbuild.cmd') (Join-Path $PSScriptRoot 'service-worker.ts') --bundle --format=iife "--outfile=$worker"
 & (Join-Path $root 'node_modules/.bin/esbuild.cmd') (Join-Path $PSScriptRoot 'popup.ts') --bundle --format=iife "--outfile=$popup"
 $manifest=Get-Content -Raw (Join-Path $PSScriptRoot 'manifest.json')|ConvertFrom-Json
-$manifest.version=(Get-Content -Raw (Join-Path $root 'package.json')|ConvertFrom-Json).version
+$appVersion=(Get-Content -Raw (Join-Path $root 'package.json')|ConvertFrom-Json).version
+$manifest.version="$appVersion.1"
+$manifest|Add-Member -NotePropertyName version_name -NotePropertyValue $appVersion -Force
 $manifest|ConvertTo-Json -Depth 20|Set-Content -Encoding utf8 (Join-Path $dist 'manifest.json')
 Copy-Item -Force (Join-Path $PSScriptRoot 'popup.html'),(Join-Path $PSScriptRoot 'popup.css'),(Join-Path $PSScriptRoot 'options.html') -Destination $dist
 $icons=Join-Path $dist 'icons'

@@ -412,7 +412,13 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
   } else if (browserMode === "extension") {
     try {
       if (!extensionClient) throw new Error("extension_not_connected");
+      if (!extensionClient.supportsManagedRegistry())
+        throw new Error(
+          "La extensión instalada es anterior; recárgala desde la carpeta indicada por la aplicación.",
+        );
+      const managedTraceId = randomUUID();
       const opened = await extensionClient.request("open_stream", {
+        traceId: managedTraceId,
         streamerId: s.id,
         platform: s.platform,
         url: validation.url,
@@ -456,6 +462,7 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
             );
           } else {
             audio = await extensionClient.request("configure_audio", {
+              traceId: managedTraceId,
               tabId: opened.tabId,
               enabled: store.get("settings.kickAudioEnabled"),
               targetVolume: store.get("settings.kickInitialVolume"),
@@ -468,11 +475,28 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
               );
           }
         } catch (error) {
+          const errorCode = error instanceof Error ? error.message : "rejected";
+          const managedTabFailure = [
+            "not_managed",
+            "not_administrada",
+            "TAB_NOT_REGISTERED",
+            "APP_SESSION_MISMATCH",
+            "MANAGED_TAB_REGISTER_FAILED",
+          ].includes(errorCode);
           log(
-            `La pestaña está abierta, pero no se pudo configurar el reproductor de Kick: ${error instanceof Error ? error.message : "error"}.`,
+            managedTabFailure
+              ? "No se pudo preparar la pestaña de Kick."
+              : `La pestaña está abierta, pero no se pudo configurar el reproductor de Kick: ${errorCode}.`,
             "warning",
             s,
           );
+          console.warn("[managed-tab-trace]", {
+            stage: "I_MAIN_AUDIO_REJECTED",
+            traceId: managedTraceId,
+            appSessionId: extensionClient.appSessionId,
+            tabId: opened?.tabId,
+            errorCode,
+          });
         }
       }
       return {
