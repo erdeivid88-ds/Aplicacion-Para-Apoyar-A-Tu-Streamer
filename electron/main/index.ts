@@ -1272,6 +1272,7 @@ function createWindow() {
     minHeight: 560,
     show: !store.get("settings.startMinimized"),
     autoHideMenuBar: true,
+    icon: applicationIconPath(),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
@@ -1299,8 +1300,15 @@ function createWindow() {
   win.on("show", emit);
   win.on("restore", emit);
 }
+function applicationIconPath() {
+  return app.isPackaged
+    ? join(process.resourcesPath, "icon.ico")
+    : join(app.getAppPath(), "build", "icon.ico");
+}
 function createTray() {
-  tray = new Tray(nativeImage.createEmpty());
+  const icon = nativeImage.createFromPath(applicationIconPath());
+  if (icon.isEmpty()) throw new Error("No se pudo cargar el icono de la aplicación.");
+  tray = new Tray(icon);
   tray.setToolTip("Apoya a tu Streamer");
   updateTray();
 }

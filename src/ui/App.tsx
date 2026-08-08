@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import logoLurks from "../assets/logo-lurks.png";
 import {
   defaultAutomation,
   type AppState,
@@ -85,7 +86,7 @@ export default function App() {
             {MONITOR_LABELS[state.monitor.status].replace(/^[^\p{L}]+/u, "")}
           </StatusBadge>
           <span className="topbar-brand">
-            Apoya a tu Streamer <small>{state.updater.version}</small>
+            <img src={logoLurks} alt="" /> Apoya a tu Streamer <small>{state.updater.version}</small>
           </span>
         </div>
         {page === "Inicio" && <Home state={state} go={setPage} />}{" "}
@@ -121,7 +122,7 @@ function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <span>♡</span>
+        <img src={logoLurks} alt="Logo de Apoya a tu Streamer" />
         <div>
           Apoya a tu
           <br />
@@ -1709,6 +1710,7 @@ function SettingsPage({ state }: { state: AppState }) {
           {category === "Ayuda y soporte" && <HelpContent state={state} />}
           {category === "Acerca de" && (
             <>
+              <img className="about-logo" src={logoLurks} alt="Logo de Apoya a tu Streamer" />
               <h3>Apoya a tu Streamer</h3>
               <p>Versión instalada: {state.updater.version}</p>
               <p>
@@ -1817,7 +1819,7 @@ function Onboarding({ state, go }: { state: AppState; go: (p: Page) => void }) {
         <button className="skip" onClick={() => void finish()}>
           Omitir guía
         </button>
-        <span className="onboarding-icon">{current.icon}</span>
+        <img className="onboarding-logo" src={logoLurks} alt="Logo de Apoya a tu Streamer" />
         <small>
           Paso {step + 1} de {steps.length}
         </small>
