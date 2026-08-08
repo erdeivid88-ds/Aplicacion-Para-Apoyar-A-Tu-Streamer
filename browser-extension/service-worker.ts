@@ -1,5 +1,6 @@
 declare const chrome: any;
 import { normalizeKickUrl, waitForKickUrl } from "../src/domain/stream-url";
+import { configureManagedKickPlayback } from "../src/domain/kick-playback";
 type ManagedTab = {streamerId:string; platform:"twitch"|"kick"; canonicalUrl:string; tabId:number; streamSessionId:string; monitorSessionId:string; createdAt:number; muted:boolean; createdByIntegration:true};
 const HOST = "es.vortexstudio.apoyaatustreamer";
 const VERSION = 1;
@@ -39,7 +40,7 @@ function validate(m:any, handshake=false) {
 }
 async function exact(m:any) { const tabId=Number(m.payload.tabId); const item=managed.get(tabId); if (!item || item.streamerId!==m.payload.streamerId || item.platform!==m.payload.platform || item.streamSessionId!==m.payload.streamSessionId || item.monitorSessionId!==m.payload.monitorSessionId) throw new Error("not_managed"); const ready=item.platform==="kick"?await readyKickTab(tabId):undefined;const tab=ready?.tab??await chrome.tabs.get(tabId); if (safeUrl(item.platform,tab.url)!==item.canonicalUrl) throw new Error("url_changed"); return {item,tab,diagnostic:ready?.diagnostic}; }
 async function configureKickPlayer(tabId:number, volume:number) {
-  const [result]=await chrome.scripting.executeScript({target:{tabId},func:(configuredVolume:number)=>{
+  const [result]=await chrome.scripting.executeScript({target:{tabId},func:async(configuredVolume:number)=>{
     const page=window as typeof window&{__apoyaKickAudio?:{observer?:MutationObserver;timers:number[];cancelled:boolean;attempts:number;last?:unknown}};
     if(page.__apoyaKickAudio){page.__apoyaKickAudio.cancelled=true;page.__apoyaKickAudio.observer?.disconnect();page.__apoyaKickAudio.timers.forEach(clearTimeout);}
     const control={timers:[] as number[],cancelled:false,attempts:0} as {observer?:MutationObserver;timers:number[];cancelled:boolean;attempts:number;last?:unknown};page.__apoyaKickAudio=control;
@@ -49,21 +50,19 @@ async function configureKickPlayer(tabId:number, volume:number) {
       const video=videos.sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight)[0];
       const buttons=[...document.querySelectorAll<HTMLElement>('[role="button"],button')];
       const muteButton=buttons.find((candidate)=>/mute|unmute|silenciar|activar sonido|desmutear/i.test(buttonState(candidate)??""));
-      const before=video?{videoMutedBefore:video.muted,volumeBefore:video.volume}:{};const stateBefore=buttonState(muteButton);
-      if(video){video.muted=false;video.defaultMuted=false;if(configuredVolume>0)video.volume=configuredVolume;}
+      const before=video?{playerMutedBefore:video.muted,playerVolumeBefore:video.volume}:{playerMutedBefore:null,playerVolumeBefore:null};const stateBefore=buttonState(muteButton);
+      if(video){video.muted=false;video.defaultMuted=false;if(configuredVolume>0)video.volume=configuredVolume;video.dispatchEvent(new Event("volumechange",{bubbles:true}));}
       const visualMuted=/unmute|activar sonido|desmutear/i.test(stateBefore??"");let clicked=false;
       if(muteButton&&video&&(video.muted||video.volume===0||visualMuted)){muteButton.click();clicked=true;}
-      control.attempts++;control.last={videoFound:Boolean(video),...before,videoMutedAfter:video?.muted,volumeAfter:video?.volume,muteButtonFound:Boolean(muteButton),muteButtonStateBefore:stateBefore,muteButtonClicked:clicked,muteButtonStateAfter:buttonState(muteButton),attempts:control.attempts,finalSuccess:Boolean(video&&!video.muted&&video.volume>0)};
-      if(video&&!video.muted&&video.volume>0){control.observer?.disconnect();control.timers.forEach(clearTimeout);control.timers=[];}
+      control.attempts++;control.last={playerFound:Boolean(video),...before,playerMutedAfter:video?.muted??null,playerVolumeAfter:video?.volume??null,muteButtonFound:Boolean(muteButton),muteButtonStateBefore:stateBefore,muteButtonClicked:clicked,muteButtonStateAfter:buttonState(muteButton),attempts:control.attempts,playbackReady:Boolean(video&&!video.muted&&video.volume>0)};
       return control.last;
     };
     control.observer=new MutationObserver(()=>void attempt());control.observer.observe(document.documentElement,{childList:true,subtree:true});
-    [0,250,500,1000,2000,4000].forEach(delay=>control.timers.push(window.setTimeout(attempt,delay)));
-    document.addEventListener("playing",attempt,{once:true,capture:true});document.addEventListener("canplay",attempt,{once:true,capture:true});
-    window.setTimeout(()=>{control.observer?.disconnect();control.cancelled=true;},4500);
-    return attempt();
+    document.addEventListener("loadedmetadata",attempt,{once:true,capture:true});document.addEventListener("playing",attempt,{once:true,capture:true});document.addEventListener("canplay",attempt,{once:true,capture:true});
+    for(const delay of [0,250,250,500,1000,2000]){if(delay)await new Promise(resolve=>setTimeout(resolve,delay));const state=attempt() as any;if(state?.playbackReady)return state;}
+    control.observer?.disconnect();control.cancelled=true;return control.last??{playerFound:false,playerMutedBefore:null,playerMutedAfter:null,playerVolumeBefore:null,playerVolumeAfter:null,muteButtonFound:false,muteButtonClicked:false,playbackReady:false,attempts:control.attempts};
   },args:[volume]});
-  return result?.result??{found:false,playerMuted:true};
+  return result?.result;
 }
 async function onMessage(m:any) {
   try {
@@ -81,10 +80,10 @@ async function onMessage(m:any) {
     if(m.action==="configure_audio"){
       if(item.platform!=="kick"){response(m,true,{tabId:item.tabId,tabMuted:Boolean(tab.mutedInfo?.muted),playerMuted:undefined,audioConfigured:true});return;}
       const enabled=m.payload.enabled!==false;const volume=Math.min(1,Math.max(0,Number(m.payload.volume??1)));
-      await chrome.tabs.update(item.tabId,{muted:!enabled});const checked=await chrome.tabs.get(item.tabId);item.muted=Boolean(checked.mutedInfo?.muted);
-      if(!enabled){response(m,true,{tabId:item.tabId,tabMuted:item.muted,playerMuted:undefined,audioConfigured:true,attempts:0});return;}
-      if(!applicationConnected||m.appSessionId!==appSessionId||Date.now()-lastHeartbeat>30000)throw new Error("inactive_session");const player=await configureKickPlayer(item.tabId,volume);
-      response(m,true,{tabId:item.tabId,tabMuted:item.muted,...player,audioConfigured:true,audioAttempted:true,audioSuccess:player.finalSuccess===true,...diagnostic,actionTaken:"limited_audio_routine_started"});return;
+      if(!enabled){await stopKickAudio(item.tabId);const muted=await chrome.tabs.update(item.tabId,{muted:true});item.muted=Boolean(muted.mutedInfo?.muted);response(m,true,{tabId:item.tabId,browserTabMuted:item.muted,playerMuted:null,audioConfigured:true,attempts:0});return;}
+      if(!applicationConnected||m.appSessionId!==appSessionId||Date.now()-lastHeartbeat>30000)throw new Error("inactive_session");
+      const playback=await configureManagedKickPlayback("browserTab",()=>configureKickPlayer(item.tabId,volume),async()=>{await chrome.tabs.update(item.tabId,{muted:true});},async()=>Boolean((await chrome.tabs.get(item.tabId)).mutedInfo?.muted));item.muted=playback.browserTabMutedAfter??false;
+      response(m,playback.success,{tabId:item.tabId,...playback,audioConfigured:playback.success,audioAttempted:true,audioSuccess:playback.success,...diagnostic,actionTaken:"player_unmuted_then_tab_muted"},playback.errorCode);return;
     }
     if(m.action==="mute_stream"||m.action==="unmute_stream"){const muted=m.action==="mute_stream";const updated=await chrome.tabs.update(item.tabId,{muted});item.muted=Boolean(updated.mutedInfo?.muted);response(m,true,{tabId:item.tabId,muted:item.muted});return;}
     if(m.action==="focus_stream"){await chrome.windows.update(tab.windowId,{focused:true});await chrome.tabs.update(item.tabId,{active:true});response(m,true,{tabId:item.tabId});return;}

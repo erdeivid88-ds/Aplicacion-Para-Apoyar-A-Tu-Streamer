@@ -1,5 +1,6 @@
 import { BrowserWindow, WebContentsView } from "electron";
 import { inspectKickUrl, validateStreamUrl } from "../../src/domain/stream-url";
+import { configureManagedKickPlayback } from "../../src/domain/kick-playback";
 import type { Platform } from "../../src/domain/types";
 export interface InternalTab {
   streamerId: string;
@@ -23,7 +24,7 @@ export interface InternalTabInput {
 }
 const BAR_HEIGHT = 54;
 function kickAudioScript(volume: number) {
-  return `(() => {
+  return `(async () => {
     const key = "__apoyaInternalKickAudio";
     const old = window[key]; if (old) { old.observer?.disconnect(); old.timers?.forEach(clearTimeout); }
     const control = { timers: [], attempts: 0, cancelled: false }; window[key] = control;
@@ -31,17 +32,16 @@ function kickAudioScript(volume: number) {
     const attempt = () => { if (control.cancelled) return control.last;
       const videos = [...document.querySelectorAll("video")].filter((video) => { const box=video.getBoundingClientRect(); return box.width>200&&box.height>100&&getComputedStyle(video).visibility!=="hidden"; }).sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight);
       const video=videos[0]; const button=[...document.querySelectorAll('[role="button"],button')].find((item)=>/mute|unmute|silenciar|activar sonido|desmutear/i.test(label(item)));
-      const before=video?{videoMutedBefore:video.muted,volumeBefore:video.volume}:{}; const buttonBefore=label(button);
-      if(video){video.muted=false;video.defaultMuted=false;if(${volume}>0)video.volume=${volume};}
+      const before=video?{playerMutedBefore:video.muted,playerVolumeBefore:video.volume}:{playerMutedBefore:null,playerVolumeBefore:null}; const buttonBefore=label(button);
+      if(video){video.muted=false;video.defaultMuted=false;if(${volume}>0)video.volume=${volume};video.dispatchEvent(new Event("volumechange",{bubbles:true}));}
       const visualMuted=/unmute|activar sonido|desmutear/i.test(buttonBefore);let clicked=false;
       if(button&&video&&(video.muted||video.volume===0||visualMuted)){button.click();clicked=true;}
-      control.attempts++;control.last={videoFound:!!video,...before,videoMutedAfter:video?.muted,volumeAfter:video?.volume,muteButtonFound:!!button,muteButtonStateBefore:buttonBefore,muteButtonClicked:clicked,muteButtonStateAfter:label(button),attempts:control.attempts,finalSuccess:!!video&&!video.muted&&video.volume>0};
-      if(control.last.finalSuccess){control.observer?.disconnect();control.timers.forEach(clearTimeout);control.timers=[];} return control.last;
+      control.attempts++;control.last={playerFound:!!video,...before,playerMutedAfter:video?.muted??null,playerVolumeAfter:video?.volume??null,muteButtonFound:!!button,muteButtonStateBefore:buttonBefore,muteButtonClicked:clicked,muteButtonStateAfter:label(button),attempts:control.attempts,playbackReady:!!video&&!video.muted&&video.volume>0}; return control.last;
     };
     control.observer=new MutationObserver(attempt);control.observer.observe(document.documentElement,{childList:true,subtree:true});
-    [0,250,500,1000,2000,4000].forEach((delay)=>control.timers.push(setTimeout(attempt,delay)));
-    addEventListener("playing",attempt,{once:true,capture:true});addEventListener("canplay",attempt,{once:true,capture:true});
-    setTimeout(()=>{control.cancelled=true;control.observer?.disconnect();},4500);return attempt();
+    addEventListener("loadedmetadata",attempt,{once:true,capture:true});addEventListener("playing",attempt,{once:true,capture:true});addEventListener("canplay",attempt,{once:true,capture:true});
+    for(const delay of [0,250,250,500,1000,2000]){if(delay)await new Promise((resolve)=>setTimeout(resolve,delay));const state=attempt();if(state?.playbackReady)return state;}
+    control.cancelled=true;control.observer?.disconnect();return control.last??{playerFound:false,playerMutedBefore:null,playerMutedAfter:null,playerVolumeBefore:null,playerVolumeAfter:null,muteButtonFound:false,muteButtonClicked:false,playbackReady:false,attempts:control.attempts};
   })()`;
 }
 export class InternalBrowserManager {
@@ -205,10 +205,18 @@ export class InternalBrowserManager {
     const tab = this.tabs.get(id);
     if (!tab) throw new Error("internal_tab_missing");
     const shouldUnmute = tab.platform === "kick" && enabled;
-    tab.muted = !shouldUnmute;
-    tab.view.webContents.setAudioMuted(!shouldUnmute);
-    if (!shouldUnmute)
+    if (!shouldUnmute) {
+      if (tab.platform === "kick")
+        await tab.view.webContents
+          .executeJavaScript(
+            `(() => { const control=window.__apoyaInternalKickAudio; if(control){control.cancelled=true;control.observer?.disconnect();control.timers?.forEach(clearTimeout);delete window.__apoyaInternalKickAudio;} })()`,
+            true,
+          )
+          .catch(() => undefined);
+      tab.muted = true;
+      tab.view.webContents.setAudioMuted(true);
       return { tabMuted: true, playerMuted: undefined, audioConfigured: true };
+    }
     const diagnostic = inspectKickUrl(
       tab.view.webContents.getURL(),
       "webContents.getURL",
@@ -224,17 +232,26 @@ export class InternalBrowserManager {
       };
     const safeVolume = Math.min(1, Math.max(0, volume));
     this.kickVolumes.set(id, safeVolume);
-    const player = (await tab.view.webContents.executeJavaScript(
-      kickAudioScript(safeVolume),
-      true,
-    )) as { videoFound: boolean; videoMutedAfter?: boolean };
+    const playback = await configureManagedKickPlayback(
+      "webContents",
+      () =>
+        tab.view.webContents.executeJavaScript(
+          kickAudioScript(safeVolume),
+          true,
+        ),
+      () => tab.view.webContents.setAudioMuted(true),
+      () => tab.view.webContents.isAudioMuted(),
+    );
+    tab.muted = playback.webContentsMutedAfter ?? true;
     this.toolbar();
     return {
-      tabMuted: tab.view.webContents.isAudioMuted(),
-      playerMuted: player.videoMutedAfter,
-      audioConfigured: true,
+      tabMuted: playback.webContentsMutedAfter ?? true,
+      playerMuted: playback.playerMutedAfter ?? undefined,
+      playerVolume: playback.playerVolumeAfter,
+      audioConfigured: playback.success,
       audioAttempted: true,
-      audioSuccess: player.videoMutedAfter === false,
+      audioSuccess: playback.success,
+      ...playback,
       ...diagnostic,
     };
   }

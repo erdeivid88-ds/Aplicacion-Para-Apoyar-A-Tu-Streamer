@@ -388,6 +388,12 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
           "warning",
           s,
         );
+      else if (s.platform === "kick")
+        log(
+          "Kick reproduciendo correctamente con la pestaña silenciada.",
+          "info",
+          s,
+        );
     } catch (error) {
       log(
         `El directo está abierto, pero no se pudo configurar el reproductor: ${error instanceof Error ? error.message : "error"}.`,
@@ -462,6 +468,12 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
               enabled: store.get("settings.kickAudioEnabled"),
               volume: store.get("settings.kickInitialVolume"),
             });
+            if (audio.audioConfigured)
+              log(
+                "Kick reproduciendo correctamente con la pestaña silenciada.",
+                "info",
+                s,
+              );
           }
         } catch (error) {
           log(
