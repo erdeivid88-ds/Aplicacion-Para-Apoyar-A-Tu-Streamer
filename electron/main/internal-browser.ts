@@ -25,6 +25,7 @@ export interface InternalTabInput {
 const BAR_HEIGHT = 54;
 function kickAudioScript(volume: number) {
   return `(async () => {
+    if(location.protocol!=="https:"||!(location.hostname==="kick.com"||location.hostname==="www.kick.com"))return{playerFound:false,playerMutedBefore:null,playerMutedAfter:null,playerVolumeBefore:null,playerVolumeAfter:null,muteButtonFound:false,muteButtonClicked:false,playbackReady:false,attempts:0,errorCode:"NOT_KICK_TAB"};
     const key = "__apoyaInternalKickAudio";
     const old = window[key]; if (old) { old.observer?.disconnect(); old.timers?.forEach(clearTimeout); }
     const control = { timers: [], attempts: 0, cancelled: false }; window[key] = control;
@@ -34,8 +35,8 @@ function kickAudioScript(volume: number) {
       const video=videos[0]; const button=[...document.querySelectorAll('[role="button"],button')].find((item)=>/mute|unmute|silenciar|activar sonido|desmutear/i.test(label(item)));
       const before=video?{playerMutedBefore:video.muted,playerVolumeBefore:video.volume}:{playerMutedBefore:null,playerVolumeBefore:null}; const buttonBefore=label(button);
       if(video){video.muted=false;video.defaultMuted=false;if(${volume}>0)video.volume=${volume};video.dispatchEvent(new Event("volumechange",{bubbles:true}));}
-      const visualMuted=/unmute|activar sonido|desmutear/i.test(buttonBefore);let clicked=false;
-      if(button&&video&&(video.muted||video.volume===0||visualMuted)){button.click();clicked=true;}
+      let clicked=false;
+      if(button&&video&&(video.muted||video.volume===0)){button.click();clicked=true;}
       control.attempts++;control.last={playerFound:!!video,...before,playerMutedAfter:video?.muted??null,playerVolumeAfter:video?.volume??null,muteButtonFound:!!button,muteButtonStateBefore:buttonBefore,muteButtonClicked:clicked,muteButtonStateAfter:label(button),attempts:control.attempts,playbackReady:!!video&&!video.muted&&video.volume>0}; return control.last;
     };
     control.observer=new MutationObserver(attempt);control.observer.observe(document.documentElement,{childList:true,subtree:true});

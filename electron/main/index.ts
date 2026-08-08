@@ -39,7 +39,6 @@ import { completedStopState } from "../../src/domain/monitor-control";
 import {
   inspectKickUrl,
   streamUrl,
-  type ManagedStreamTarget,
   validateStreamUrl,
 } from "../../src/domain/stream-url";
 import { validateSettings } from "../../src/domain/settings-ui";
@@ -456,17 +455,10 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
               s,
             );
           } else {
-            const managedTarget: ManagedStreamTarget = {
-              platform: "kick",
-              slug: target.slug,
-              canonicalUrl: target.canonicalUrl,
-              tabId: opened.tabId,
-            };
             audio = await extensionClient.request("configure_audio", {
-              ...opened,
-              ...managedTarget,
+              tabId: opened.tabId,
               enabled: store.get("settings.kickAudioEnabled"),
-              volume: store.get("settings.kickInitialVolume"),
+              targetVolume: store.get("settings.kickInitialVolume"),
             });
             if (audio.audioConfigured)
               log(
@@ -608,6 +600,10 @@ async function automate(s: Streamer, generation: number) {
   )
     store.set("bot.status", "unauthorized-channel");
   if (!decision.send) return;
+  if (s.platform === "kick") {
+    log("Scheduler Kick creado.", "info", s);
+    log("Mensaje Kick programado.", "info", s);
+  }
   if (
     (s.platform === "twitch" && !auth.hasTokens()) ||
     (s.platform === "kick" && !kickAuth.hasTokens())
@@ -624,6 +620,11 @@ async function automate(s: Streamer, generation: number) {
     } else {
       if (!s.externalId)
         throw new Error("Falta la ID oficial del canal de Kick.");
+      log(
+        "KickChatSender iniciado (broadcaster_user_id disponible: sí).",
+        "info",
+        s,
+      );
       await kickAuth.send(s.externalId, sanitizeMessage(s.automation.message));
       store.set("kick.status", "connected");
     }
@@ -706,7 +707,7 @@ async function scan(generation = monitorGeneration) {
               "info",
               current,
             );
-            if (opened.mode !== "system")
+            if (opened.mode !== "system" && current.platform !== "kick")
               log(
                 `Audio: pestaña ${opened.tabMuted ? "silenciada" : "con sonido"}; reproductor ${
                   opened.playerMuted === undefined
