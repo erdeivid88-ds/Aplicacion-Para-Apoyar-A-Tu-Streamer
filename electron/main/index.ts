@@ -64,6 +64,8 @@ import {
 } from "./extension-installer";
 import { AppUpdater } from "./updater";
 const __dirname = dirname(fileURLToPath(import.meta.url));
+if (process.env.APOYA_SMOKE_USER_DATA)
+  app.setPath("userData", process.env.APOYA_SMOKE_USER_DATA);
 const store = new Store<AppState>({ name: "app-data", defaults });
 let win: BrowserWindow | null = null,
   tray: Tray | null = null,

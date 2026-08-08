@@ -17,6 +17,7 @@ jobs:
       - run: npm run test:extension
       - run: npm run test:native-host
       - run: npm run build:win
+      - run: npm run smoke:win
       - shell: pwsh
         run: Get-ChildItem release -File | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $($_.Path | Split-Path -Leaf)" } | Set-Content release/SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
