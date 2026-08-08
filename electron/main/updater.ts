@@ -1,4 +1,4 @@
-import { autoUpdater, type AppUpdater as ElectronUpdater } from "electron-updater";
+import electronUpdater, { type AppUpdater as ElectronUpdater } from "electron-updater";
 import type { UpdateState } from "../../src/domain/types";
 
 type UpdaterOptions = {
@@ -17,7 +17,7 @@ export class AppUpdater {
   private timer?: NodeJS.Timeout;
 
   constructor(private readonly options: UpdaterOptions) {
-    this.adapter = options.adapter ?? autoUpdater;
+    this.adapter = options.adapter ?? electronUpdater.autoUpdater;
     this.state = {
       version: options.version,
       packaged: options.packaged,
