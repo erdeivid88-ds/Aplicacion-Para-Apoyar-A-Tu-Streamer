@@ -40,11 +40,14 @@ import {
   defaultAutomation,
   defaultRuntime,
   defaults,
+  DEFAULT_AUTO_MESSAGE,
+  DEFAULT_KICK_AUTO_MESSAGE,
   type AppState,
   type BotStatus,
   type BotConnection,
   type Streamer,
   type TwitchAccountType,
+  type OpenStreamResult,
 } from "../../src/domain/types";
 import { InternalBrowserManager, type InternalTab } from "./internal-browser";
 import { KickProvider, TwitchProvider } from "./providers";
@@ -98,7 +101,7 @@ const auth = new TwitchAuth(() =>
 const kickAuth = new KickAuth();
 function migrate() {
   const raw = store.store as AppState;
-  store.set("schemaVersion", 6);
+  store.set("schemaVersion", 7);
   store.set("settings", migrateSettings110(raw));
   store.set("bot", migrateConnectionFrom102(raw.bot));
   store.set("deviceAuth", raw.deviceAuth ?? { status: "idle" });
@@ -123,11 +126,26 @@ function migrate() {
   });
   store.set(
     "streamers",
-    (raw.streamers ?? []).map((s) => ({
-      ...s,
-      automation: normalizeAutomation(s.automation ?? defaultAutomation()),
-      automationRuntime: s.automationRuntime ?? defaultRuntime(),
-    })),
+    (raw.streamers ?? []).map((s) => {
+      const automation = normalizeAutomation(
+        s.automation ?? defaultAutomation(s.platform),
+      );
+      if (
+        (raw.schemaVersion ?? 0) < 7 &&
+        s.platform === "kick" &&
+        automation.message === DEFAULT_AUTO_MESSAGE
+      )
+        automation.message = DEFAULT_KICK_AUTO_MESSAGE;
+      if ((raw.schemaVersion ?? 0) < 7 && automation.enabled && !automation.authorized) {
+        automation.authorized = true;
+        automation.authorizedAt = new Date().toISOString();
+      }
+      return {
+        ...s,
+        automation,
+        automationRuntime: s.automationRuntime ?? defaultRuntime(),
+      };
+    }),
   );
   const platforms = raw.settings.platforms as Record<
     string,
@@ -287,7 +305,7 @@ const safeExternal = (value: string) => {
     throw new Error("Dominio no permitido.");
   return shell.openExternal(url.toString());
 };
-async function openStream(s: Streamer) {
+async function openStream(s: Streamer): Promise<OpenStreamResult> {
   const browserMode = store.get("settings.browserMode");
   const reusable = internalBrowser.has(s.id);
   const validation = validateStreamUrl(s.platform, s.url);
@@ -299,7 +317,7 @@ async function openStream(s: Streamer) {
     browserMode,
     existingWindow: reusable,
     validated: validation.valid,
-    windowRole: browserMode === "managed" ? "managed-stream" : "external",
+    windowRole: browserMode === "internal" ? "managed-stream" : "external",
   });
   if (!validation.valid) {
     log(`Apertura bloqueada: ${validation.reason}`, "error", s);
@@ -309,9 +327,16 @@ async function openStream(s: Streamer) {
     store.get("monitor.monitorSessionId") ?? randomUUID();
   const streamSessionId = s.sessionId ?? `${s.id}:${s.lastCheckedAt ?? "live"}`;
   const blockKey = `${s.id}:${streamSessionId}:${monitorSessionId}`;
-  if (userClosedForMonitorSession.has(blockKey)) return;
-  if (browserMode === "managed") {
-    await internalBrowser.open(
+  if (userClosedForMonitorSession.has(blockKey))
+    return {
+      accepted: false,
+      mode: browserMode,
+      managed: browserMode !== "system",
+      openedAt: Date.now(),
+      errorCode: "user_closed_in_session",
+    };
+  if (browserMode === "internal") {
+    const opened = await internalBrowser.open(
       {
         streamerId: s.id,
         platform: s.platform,
@@ -323,15 +348,46 @@ async function openStream(s: Streamer) {
       store.get("settings.focusStreamOnOpen"),
     );
     syncInternalBrowserState();
+    let audio = {
+      tabMuted: true,
+      playerMuted: undefined as boolean | undefined,
+      audioConfigured: s.platform !== "kick",
+    };
+    try {
+      audio = await internalBrowser.configureAudio(
+        s.id,
+        store.get("settings.kickAudioEnabled"),
+        store.get("settings.kickInitialVolume"),
+      );
+    } catch (error) {
+      log(
+        `El directo está abierto, pero no se pudo configurar el reproductor: ${error instanceof Error ? error.message : "error"}.`,
+        "warning",
+        s,
+      );
+    }
+    return {
+      accepted: true,
+      mode: "internal",
+      managed: true,
+      openedAt: Date.now(),
+      webContentsId: opened.tab.view.webContents.id,
+      reusedExistingTab: opened.reusedExistingTab,
+      ...audio,
+    };
   } else if (browserMode === "extension") {
     try {
-      const opened = await extensionClient?.request("open_stream", {
+      if (!extensionClient) throw new Error("extension_not_connected");
+      const opened = await extensionClient.request("open_stream", {
         streamerId: s.id,
         platform: s.platform,
         url: validation.url,
         streamSessionId,
         monitorSessionId,
-        muted: store.get("settings.muteManagedStreams"),
+        muted:
+          s.platform === "kick"
+            ? false
+            : store.get("settings.muteManagedStreams"),
         active:
           !store.get("settings.openStreamsInBackground") ||
           store.get("settings.focusStreamOnOpen"),
@@ -341,17 +397,55 @@ async function openStream(s: Streamer) {
           "extension.managedTabs",
           Math.max(store.get("extension.managedTabs"), 1),
         );
+      let audio = {
+        tabMuted: Boolean(opened?.muted),
+        playerMuted: undefined as boolean | undefined,
+        audioConfigured: s.platform !== "kick",
+      };
+      if (s.platform === "kick") {
+        try {
+          audio = await extensionClient.request("configure_audio", {
+            ...opened,
+            enabled: store.get("settings.kickAudioEnabled"),
+            volume: store.get("settings.kickInitialVolume"),
+          });
+        } catch (error) {
+          log(
+            `La pestaña está abierta, pero no se pudo configurar el reproductor de Kick: ${error instanceof Error ? error.message : "error"}.`,
+            "warning",
+            s,
+          );
+        }
+      }
+      return {
+        accepted: true,
+        mode: "extension",
+        managed: true,
+        openedAt: Date.now(),
+        tabId: opened?.tabId,
+        reusedExistingTab: opened?.created === false,
+        ...audio,
+      };
     } catch (error) {
-      if (store.get("settings.extensionFallback"))
-        await safeExternal(validation.url);
-      else throw error;
+      if (!store.get("settings.extensionFallback")) throw error;
+      await safeExternal(validation.url);
+      return {
+        accepted: true,
+        mode: "system",
+        managed: false,
+        openedAt: Date.now(),
+        errorCode: "extension_fallback",
+      };
     }
-  } else await safeExternal(validation.url);
-  if (store.get("settings.notifications"))
-    new Notification({
-      title: `${s.displayName} está en directo`,
-      body: s.title ?? "Se ha abierto el canal.",
-    }).show();
+  } else {
+    await safeExternal(validation.url);
+    return {
+      accepted: true,
+      mode: "system",
+      managed: false,
+      openedAt: Date.now(),
+    };
+  }
 }
 function botStatus(error: unknown): BotStatus {
   if (!(error instanceof TwitchApiError)) return "temporarily-unavailable";
@@ -408,9 +502,10 @@ async function automate(s: Streamer, generation: number) {
     store.set("bot.status", "unauthorized-channel");
   if (!decision.send) return;
   if (
-    (s.platform === "twitch" && store.get("bot.status") !== "connected") ||
-    (s.platform === "kick" && store.get("kick.status") !== "connected")
-  ) return;
+    (s.platform === "twitch" && !auth.hasTokens()) ||
+    (s.platform === "kick" && !kickAuth.hasTokens())
+  )
+    return;
   try {
     if (s.platform === "twitch") {
       const broadcasterId =
@@ -418,8 +513,11 @@ async function automate(s: Streamer, generation: number) {
       if (!monitorCurrent(generation)) return;
       await auth.send(broadcasterId, sanitizeMessage(s.automation.message));
       s.externalId = broadcasterId;
+      store.set("bot.status", "connected");
     } else {
-      await kickAuth.send(sanitizeMessage(s.automation.message));
+      if (!s.externalId) throw new Error("Falta la ID oficial del canal de Kick.");
+      await kickAuth.send(s.externalId, sanitizeMessage(s.automation.message));
+      store.set("kick.status", "connected");
     }
     if (!monitorCurrent(generation)) return;
     s.automationRuntime = recordSuccess(
@@ -453,7 +551,7 @@ async function automate(s: Streamer, generation: number) {
       s,
     );
     if (s.automationRuntime.paused) {
-      store.set("bot.status", "paused");
+      if (s.platform === "twitch") store.set("bot.status", "paused");
       log(
         "Automatización pausada tras tres errores consecutivos.",
         "warning",
@@ -491,10 +589,33 @@ async function scan(generation = monitorGeneration) {
           lastError: undefined,
         };
         if (change.shouldOpen) {
-          await openStream(current);
-          current.openedSessionId = result.sessionId;
-          current.openedAt = new Date().toISOString();
-          log("Canal detectado y abierto en directo.", "info", current);
+          const opened = await openStream(current);
+          if (opened.accepted) {
+            current.openedSessionId = result.sessionId;
+            current.openedAt = new Date(opened.openedAt).toISOString();
+            log(
+              `Canal abierto (${opened.mode}${opened.reusedExistingTab ? ", pestaña reutilizada" : ""}).`,
+              "info",
+              current,
+            );
+            if (opened.mode !== "system")
+              log(
+                `Audio: pestaña ${opened.tabMuted ? "silenciada" : "con sonido"}; reproductor ${
+                  opened.playerMuted === undefined
+                    ? "no comprobable"
+                    : opened.playerMuted
+                      ? "silenciado"
+                      : "con sonido"
+                }.`,
+                opened.audioConfigured === false ? "warning" : "info",
+                current,
+              );
+            if (store.get("settings.notifications"))
+              new Notification({
+                title: `${current.displayName} está en directo`,
+                body: current.title ?? "Se ha abierto el canal.",
+              }).show();
+          }
         }
         if (change.ended) {
           current.automationRuntime = defaultRuntime();
@@ -909,7 +1030,7 @@ function register() {
     const list = store.get("streamers");
     const old = list.find((x) => x.id === input.id);
     const automation = normalizeAutomation(
-      input.automation ?? old?.automation ?? defaultAutomation(),
+      input.automation ?? old?.automation ?? defaultAutomation(input.platform),
     );
     if (automation.authorized && !old?.automation.authorized)
       automation.authorizedAt = new Date().toISOString();
@@ -1009,6 +1130,8 @@ function register() {
       "browserMode",
       "closeManagedTabs",
       "muteManagedStreams",
+      "kickAudioEnabled",
+      "kickInitialVolume",
       "openStreamsInBackground",
       "focusStreamOnOpen",
       "closeExtensionTabsOnEnd",

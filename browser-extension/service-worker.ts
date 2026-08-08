@@ -30,6 +30,16 @@ function validate(m:any, handshake=false) {
   if (!handshake && (!applicationConnected || m.appSessionId !== appSessionId || Date.now()-lastHeartbeat > 30000)) throw new Error("inactive_session");
 }
 async function exact(m:any) { const tabId=Number(m.payload.tabId); const item=managed.get(tabId); if (!item || item.streamerId!==m.payload.streamerId || item.platform!==m.payload.platform || item.streamSessionId!==m.payload.streamSessionId || item.monitorSessionId!==m.payload.monitorSessionId) throw new Error("not_managed"); const tab=await chrome.tabs.get(tabId); if (safeUrl(item.platform,tab.url)!==item.canonicalUrl) throw new Error("url_changed"); return {item,tab}; }
+async function configureKickPlayer(tabId:number, volume:number) {
+  const [result]=await chrome.scripting.executeScript({target:{tabId},func:(configuredVolume:number)=>{
+    const media=[...document.querySelectorAll("video")] as HTMLVideoElement[];
+    for(const element of media){element.muted=false;element.defaultMuted=false;element.volume=configuredVolume;}
+    const muted=media.some(element=>element.muted||element.volume===0);
+    if(muted){const button=[...document.querySelectorAll("button")].find((candidate)=>/unmute|activar sonido|desmutear/i.test(candidate.getAttribute("aria-label")??candidate.getAttribute("title")??"")) as HTMLButtonElement|undefined;button?.click();}
+    return {found:media.length>0,playerMuted:media.some(element=>element.muted||element.volume===0),playerVolume:media[0]?.volume,actionTaken:media.length?"unmuted":"video_not_found"};
+  },args:[volume]});
+  return result?.result??{found:false,playerMuted:true};
+}
 async function onMessage(m:any) {
   try {
     if (m?.action === "handshake") { validate(m,true); inactive(); requestIds.add(m.requestId); applicationConnected=true; appSessionId=m.appSessionId; lastHeartbeat=Date.now(); armWatchdog(); response(m,true,{extensionVersion:chrome.runtime.getManifest().version,browser:navigator.userAgent.includes("Edg/")?"edge":"chrome",connected:true}); return; }
@@ -43,6 +53,15 @@ async function onMessage(m:any) {
     if (m.action === "get_stream_tabs") { response(m,true,{tabs:[...managed.values()]}); return; }
     if (m.action === "close_all_managed_streams") { const ids=[...managed.keys()]; if(ids.length) await chrome.tabs.remove(ids); managed.clear(); await chrome.storage.session.remove("managedTabs"); response(m,true,{closed:ids.length}); return; }
     const {item,tab}=await exact(m);
+    if(m.action==="configure_audio"){
+      if(item.platform!=="kick"){response(m,true,{tabId:item.tabId,tabMuted:Boolean(tab.mutedInfo?.muted),playerMuted:undefined,audioConfigured:true});return;}
+      const enabled=m.payload.enabled!==false;const volume=Math.min(1,Math.max(0,Number(m.payload.volume??1)));
+      await chrome.tabs.update(item.tabId,{muted:!enabled});const checked=await chrome.tabs.get(item.tabId);item.muted=Boolean(checked.mutedInfo?.muted);
+      if(!enabled){response(m,true,{tabId:item.tabId,tabMuted:item.muted,playerMuted:undefined,audioConfigured:true,attempts:0});return;}
+      let player:any={found:false,playerMuted:true};let attempts=0;
+      for(;attempts<6;attempts++){if(!applicationConnected||m.appSessionId!==appSessionId||Date.now()-lastHeartbeat>30000)throw new Error("inactive_session");player=await configureKickPlayer(item.tabId,volume);if(player.found&&!player.playerMuted)break;await new Promise(resolve=>setTimeout(resolve,500));}
+      response(m,true,{tabId:item.tabId,tabMuted:item.muted,playerMuted:player.playerMuted,playerVolume:player.playerVolume,audioConfigured:player.found&&!player.playerMuted,attempts:attempts+1,actionTaken:player.actionTaken});return;
+    }
     if(m.action==="mute_stream"||m.action==="unmute_stream"){const muted=m.action==="mute_stream";const updated=await chrome.tabs.update(item.tabId,{muted});item.muted=Boolean(updated.mutedInfo?.muted);response(m,true,{tabId:item.tabId,muted:item.muted});return;}
     if(m.action==="focus_stream"){await chrome.windows.update(tab.windowId,{focused:true});await chrome.tabs.update(item.tabId,{active:true});response(m,true,{tabId:item.tabId});return;}
     if(m.action==="release_stream"){managed.delete(item.tabId);await chrome.storage.session.set({managedTabs:[...managed.values()]});response(m,true,{released:true});return;}

@@ -101,8 +101,10 @@ export class InternalBrowserManager {
   async open(input: InternalTabInput, focus = false) {
     const existing = this.tabs.get(input.streamerId);
     if (existing) {
+      existing.streamSessionId = input.streamSessionId;
+      existing.monitorSessionId = input.monitorSessionId;
       this.activate(input.streamerId);
-      return existing;
+      return { tab: existing, reusedExistingTab: true };
     }
     const checked = validateStreamUrl(input.platform, input.canonicalUrl);
     if (!checked.valid) throw new Error(checked.reason);
@@ -156,7 +158,28 @@ export class InternalBrowserManager {
       if (window.isMinimized()) window.restore();
       window.focus();
     }
-    return tab;
+    return { tab, reusedExistingTab: false };
+  }
+  async configureAudio(id: string, enabled = true, volume = 1) {
+    const tab = this.tabs.get(id);
+    if (!tab) throw new Error("internal_tab_missing");
+    const shouldUnmute = tab.platform === "kick" && enabled;
+    tab.muted = !shouldUnmute;
+    tab.view.webContents.setAudioMuted(!shouldUnmute);
+    if (!shouldUnmute)
+      return { tabMuted: true, playerMuted: undefined, audioConfigured: true };
+    const safeVolume = Math.min(1, Math.max(0, volume));
+    const player = (await tab.view.webContents.executeJavaScript(`(() => {
+      const media = [...document.querySelectorAll("video,audio")];
+      for (const element of media) { element.muted = false; element.defaultMuted = false; element.volume = ${safeVolume}; }
+      return { found: media.length > 0, playerMuted: media.some((element) => element.muted || element.volume === 0) };
+    })()`, true)) as { found: boolean; playerMuted: boolean };
+    this.toolbar();
+    return {
+      tabMuted: tab.view.webContents.isAudioMuted(),
+      playerMuted: player.playerMuted,
+      audioConfigured: player.found && !player.playerMuted,
+    };
   }
   activate(id: string) {
     if (!this.tabs.has(id)) return;

@@ -1,4 +1,5 @@
 export type Platform = "twitch" | "kick";
+export type BrowserMode = "system" | "extension" | "internal";
 export type TwitchAccountType = "personal" | "bot";
 export type MonitorStatus =
   | "off"
@@ -22,6 +23,20 @@ export type BotStatus =
   | "rate-limited"
   | "paused";
 export const DEFAULT_AUTO_MESSAGE = "HeyGuys HeyGuys HeyGuys";
+export const DEFAULT_KICK_AUTO_MESSAGE = "👋👋👋";
+export type OpenStreamResult = {
+  accepted: boolean;
+  mode: "system" | "extension" | "internal";
+  managed: boolean;
+  openedAt: number;
+  tabId?: number;
+  webContentsId?: number;
+  reusedExistingTab?: boolean;
+  tabMuted?: boolean;
+  playerMuted?: boolean;
+  audioConfigured?: boolean;
+  errorCode?: string;
+};
 export interface AutomationConfig {
   enabled: boolean;
   authorized: boolean;
@@ -71,9 +86,11 @@ export interface Settings {
   minimizeToTray: boolean;
   notifications: boolean;
   language: "es";
-  browserMode: "default" | "extension" | "managed";
+  browserMode: BrowserMode;
   closeManagedTabs: boolean;
   muteManagedStreams: boolean;
+  kickAudioEnabled: boolean;
+  kickInitialVolume: number;
   openStreamsInBackground: boolean;
   focusStreamOnOpen: boolean;
   closeExtensionTabsOnEnd: boolean;
@@ -191,10 +208,11 @@ export interface ExtensionStatus {
   managedTabs: number;
   lastError?: string;
 }
-export const defaultAutomation = (): AutomationConfig => ({
+export const defaultAutomation = (platform: Platform = "twitch"): AutomationConfig => ({
   enabled: false,
   authorized: false,
-  message: DEFAULT_AUTO_MESSAGE,
+  message:
+    platform === "kick" ? DEFAULT_KICK_AUTO_MESSAGE : DEFAULT_AUTO_MESSAGE,
   sendOnStart: true,
   repeat: false,
   intervalMinutes: 15,
@@ -207,7 +225,7 @@ export const defaultRuntime = (): AutomationRuntime => ({
   paused: false,
 });
 export const defaults: AppState = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   settings: {
     scanMinutes: 15,
     idleMinutes: 10,
@@ -219,9 +237,11 @@ export const defaults: AppState = {
     minimizeToTray: true,
     notifications: true,
     language: "es",
-    browserMode: "default",
+    browserMode: "system",
     closeManagedTabs: true,
     muteManagedStreams: true,
+    kickAudioEnabled: true,
+    kickInitialVolume: 1,
     openStreamsInBackground: true,
     focusStreamOnOpen: false,
     closeExtensionTabsOnEnd: true,

@@ -10,7 +10,10 @@ describe("Kick OAuth y chat oficiales", () => {
       .toBe("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
   });
   it("usa exactamente el modelo user de POST chat", () => {
-    expect(kickChatBody("Hola")).toEqual({ content: "Hola", type: "user" });
-    expect(kickChatBody("Hola")).not.toHaveProperty("broadcaster_user_id");
+    expect(kickChatBody("123", "👋👋👋")).toEqual({
+      broadcaster_user_id: 123,
+      content: "👋👋👋",
+      type: "user",
+    });
   });
 });

@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { defaults } from "./types";
-import { migrateSettings110 } from "./migration";
+import { migrateSettings110, normalizeBrowserMode } from "./migration";
 describe("migración 1.0.x a 1.1.0", () => {
+  it.each([
+    ["default", "system"],
+    ["browser", "system"],
+    ["external", "system"],
+    ["system", "system"],
+    ["extension", "extension"],
+    ["internal", "internal"],
+    ["managed", "internal"],
+  ])("normaliza el modo %s como %s", (input, expected) => {
+    expect(normalizeBrowserMode(input)).toBe(expected);
+  });
   it("conserva preferencias y añade defaults", () => {
     const settings = migrateSettings110({
       settings: {

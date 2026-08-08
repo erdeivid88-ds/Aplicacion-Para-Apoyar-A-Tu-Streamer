@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 
 export const KICK_REDIRECT_URI = "http://localhost:17654/oauth/kick/callback";
-export const KICK_DEVELOPER_URL = "https://dev.kick.com/";
+export const KICK_DEVELOPER_URL = "https://kick.com/settings/developer";
 const AUTHORIZE_URL = "https://id.kick.com/oauth/authorize";
 const TOKEN_URL = "https://id.kick.com/oauth/token";
 const API_URL = "https://api.kick.com";
@@ -32,8 +32,12 @@ export type KickPublicState = {
 export function pkceChallenge(verifier: string) {
   return createHash("sha256").update(verifier).digest("base64url");
 }
-export function kickChatBody(content: string) {
-  return { content, type: "user" as const };
+export function kickChatBody(broadcasterUserId: string, content: string) {
+  return {
+    broadcaster_user_id: Number(broadcasterUserId),
+    content,
+    type: "user" as const,
+  };
 }
 
 export class KickAuth {
@@ -59,6 +63,9 @@ export class KickAuth {
   configured() {
     const value = this.decrypt<Credentials>("credentials");
     return Boolean(value?.clientId && value.clientSecret);
+  }
+  hasTokens() {
+    return Boolean(this.decrypt<Tokens>("tokens"));
   }
   saveCredentials(clientId: string, clientSecret: string) {
     const credentials = {
@@ -163,12 +170,18 @@ export class KickAuth {
       redirect_uri: KICK_REDIRECT_URI, code_verifier: verifier }));
     return this.identity();
   }
-  async send(content: string) {
+  async send(broadcasterUserId: string, content: string) {
     const response = await this.authorizedFetch("/public/v1/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(kickChatBody(content)),
+      body: JSON.stringify(kickChatBody(broadcasterUserId, content)),
     });
     if (!response.ok) throw new Error(`Kick rechazó el mensaje (${response.status}).`);
+    const json = (await response.json()) as {
+      data?: { is_sent?: boolean; message_id?: string };
+    };
+    if (json.data?.is_sent !== true)
+      throw new Error("Kick no confirmó el envío del mensaje.");
+    return json.data.message_id;
   }
   async resolveChannel(slug: string) {
     const response = await this.authorizedFetch(

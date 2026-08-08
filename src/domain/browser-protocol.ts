@@ -6,7 +6,7 @@ export const MAX_NATIVE_MESSAGE_BYTES = 64 * 1024;
 export type BrowserAction =
   | "ping" | "handshake" | "heartbeat" | "open_stream" | "mute_stream"
   | "unmute_stream" | "close_stream" | "get_stream_tabs" | "focus_stream"
-  | "close_all_managed_streams" | "release_stream";
+  | "close_all_managed_streams" | "release_stream" | "configure_audio";
 export interface BrowserMessage {
   protocolVersion: 1;
   requestId: string;
@@ -20,7 +20,7 @@ export function validateBrowserMessage(value: unknown): BrowserMessage {
   if (m.protocolVersion !== PROTOCOL_VERSION) throw new Error("Protocolo incompatible.");
   if (typeof m.requestId !== "string" || !m.requestId || m.requestId.length > 128) throw new Error("requestId no válido.");
   if (typeof m.appSessionId !== "string" || !m.appSessionId || m.appSessionId.length > 128) throw new Error("appSessionId no válido.");
-  const actions: BrowserAction[] = ["ping", "handshake", "heartbeat", "open_stream", "mute_stream", "unmute_stream", "close_stream", "get_stream_tabs", "focus_stream", "close_all_managed_streams", "release_stream"];
+  const actions: BrowserAction[] = ["ping", "handshake", "heartbeat", "open_stream", "mute_stream", "unmute_stream", "close_stream", "get_stream_tabs", "focus_stream", "close_all_managed_streams", "release_stream", "configure_audio"];
   if (!actions.includes(m.action as BrowserAction)) throw new Error("Acción desconocida.");
   if (!m.payload || typeof m.payload !== "object" || Array.isArray(m.payload)) throw new Error("Payload no válido.");
   return m as unknown as BrowserMessage;

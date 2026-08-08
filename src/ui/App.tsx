@@ -541,7 +541,7 @@ function StreamerWizard({ close }: { close: () => void }) {
       avatar: preview.avatar,
       enabled: true,
       live: false,
-      automation: defaultAutomation(),
+      automation: defaultAutomation(platform),
     });
     close();
   };
@@ -609,7 +609,7 @@ function StreamerWizard({ close }: { close: () => void }) {
                 Intentaremos encontrar el canal y completar sus datos.
               </small>
             </label>
-            {(platform === "kick" || error) && (
+            {error && (
               <><label className="field">
                 ID del canal {platform === "twitch" ? "de Twitch" : "de Kick"}
                 <input
@@ -618,7 +618,7 @@ function StreamerWizard({ close }: { close: () => void }) {
                   placeholder="ID numérica"
                 />
                 <small>
-                  Kick necesita esta ID para consultar su API oficial.
+                  Como alternativa, puedes indicar la ID si la búsqueda oficial no está disponible.
                 </small>
               </label><IdHelp /></>
             )}
@@ -658,9 +658,7 @@ function StreamerWizard({ close }: { close: () => void }) {
           {step === 2 && (
             <button
               className="primary"
-              disabled={
-                !input.trim() || (platform === "kick" && !manualId.trim())
-              }
+              disabled={!input.trim()}
               onClick={() => void verify()}
             >
               Verificar canal
@@ -885,7 +883,7 @@ function Platforms({ state }: { state: AppState }) {
               <ol className="guide-steps"><li>Pulsa “Abrir Kick Developer”.</li><li>Inicia sesión en Kick.</li><li>Crea una nueva aplicación.</li><li>Pon como nombre: <code>Apoya a tu Streamer</code>.</li><li>Pega la Redirect URI que aparece aquí.</li><li>Guarda la aplicación.</li><li>Copia el Client ID.</li><li>Copia el Client Secret.</li><li>Vuelve a esta pantalla.</li><li>Pulsa “Ya he creado la aplicación”.</li></ol>
               <label className="field">Nombre recomendado<input readOnly value="Apoya a tu Streamer" /></label>
               <label className="field">Redirect URI<input readOnly value={kickRedirect} /></label>
-              <div className="card-actions"><button onClick={() => void window.api.open("https://dev.kick.com/")}>Abrir Kick Developer</button><button onClick={() => void window.api.copy(kickRedirect)}>Copiar Redirect URI</button><button onClick={() => void window.api.copy("Apoya a tu Streamer")}>Copiar nombre recomendado</button><button className="primary" onClick={() => setKickWizard("credentials")}>Ya he creado la aplicación</button></div>
+              <div className="card-actions"><button onClick={() => void window.api.open("https://kick.com/settings/developer")}>Abrir Kick Developer</button><button onClick={() => void window.api.copy(kickRedirect)}>Copiar Redirect URI</button><button onClick={() => void window.api.copy("Apoya a tu Streamer")}>Copiar nombre recomendado</button><button className="primary" onClick={() => setKickWizard("credentials")}>Ya he creado la aplicación</button></div>
             </> : <>
               <label className="field">Client ID<div className="inline-field"><input value={kickClientId} onChange={e => setKickClientId(e.target.value)} /><button onClick={() => void window.api.paste().then(setKickClientId)}>Pegar</button></div></label>
               <label className="field">Client Secret<div className="inline-field"><input type={showKickSecret ? "text" : "password"} value={kickSecret} onChange={e => setKickSecret(e.target.value)} /><button onClick={() => void window.api.paste().then(setKickSecret)}>Pegar</button><button onClick={() => setShowKickSecret(!showKickSecret)}>{showKickSecret ? "Ocultar" : "Mostrar"}</button></div></label>
@@ -932,12 +930,16 @@ function Automations({ state }: { state: AppState }) {
                   onChange={(enabled) =>
                     void window.api.saveStreamer({
                       ...s,
-                      automation: { ...s.automation, enabled },
+                      automation: {
+                        ...s.automation,
+                        enabled,
+                        authorized: enabled,
+                      },
                     })
                   }
                 />
               </div>
-              {s.platform === "twitch" && (
+              {(
                 <>
                   <SettingRow
                     title="Mensaje"
@@ -1034,7 +1036,7 @@ function Browser({ state }: { state: AppState }) {
   const [installer, setInstaller] = useState(false);
   const modes = [
     {
-      id: "default" as const,
+      id: "system" as const,
       icon: "↗",
       title: "Navegador predeterminado",
       description: "Abre el directo en el navegador habitual del sistema.",
@@ -1056,7 +1058,7 @@ function Browser({ state }: { state: AppState }) {
       ],
     },
     {
-      id: "managed" as const,
+      id: "internal" as const,
       icon: "▣",
       title: "Navegador interno",
       description:
@@ -1508,9 +1510,9 @@ function SettingsPage({ state }: { state: AppState }) {
                     )
                   }
                 >
-                  <option value="default">Navegador predeterminado</option>
+                  <option value="system">Navegador predeterminado</option>
                   <option value="extension">Navegador con extensión</option>
-                  <option value="managed">
+                  <option value="internal">
                     Navegador interno con pestañas
                   </option>
                 </select>
@@ -1543,6 +1545,26 @@ function SettingsPage({ state }: { state: AppState }) {
           )}
           {category === "Pestañas y sonido" && (
             <>
+              {bool(
+                "kickAudioEnabled",
+                "Abrir Kick con sonido",
+                "Activado por defecto para la extensión y el navegador interno.",
+              )}
+              <SettingRow
+                title="Volumen inicial de Kick"
+                description="El control automático de sonido funciona con la extensión y el navegador interno."
+              >
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={Math.round(draft.kickInitialVolume * 100)}
+                  onChange={(e) =>
+                    update("kickInitialVolume", +e.target.value / 100)
+                  }
+                />
+                <span>{Math.round(draft.kickInitialVolume * 100)} %</span>
+              </SettingRow>
               {bool(
                 "muteManagedStreams",
                 "Silenciar pestañas nuevas",
