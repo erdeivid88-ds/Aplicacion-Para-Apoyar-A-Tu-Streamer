@@ -30,7 +30,7 @@ import {
   validName,
 } from "../../src/domain/channels";
 import { parseImport } from "../../src/domain/import";
-import { ScanLock, transition } from "../../src/domain/monitor";
+import { beginMonitorSession, ScanLock, transition } from "../../src/domain/monitor";
 import { completedStopState } from "../../src/domain/monitor-control";
 import { streamUrl, validateStreamUrl } from "../../src/domain/stream-url";
 import { validateSettings } from "../../src/domain/settings-ui";
@@ -62,6 +62,7 @@ import {
   unregisterNativeHost,
   validatedExtensionDirectory,
 } from "./extension-installer";
+import { AppUpdater } from "./updater";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const store = new Store<AppState>({ name: "app-data", defaults });
 let win: BrowserWindow | null = null,
@@ -77,6 +78,7 @@ let systemSuspended = false;
 let authValidationTimer: NodeJS.Timeout | undefined;
 let nextAuthValidation: string | undefined;
 let lastSettingsRevision = 0;
+let updater: AppUpdater;
 const reopenState = new Map<
   string,
   {
@@ -169,6 +171,12 @@ const state = () => ({
     scanTimerActive: Boolean(timer),
     backgroundThrottlingDisabled: true,
     suspended: systemSuspended,
+  },
+  updater: updater?.state ?? {
+    version: app.getVersion(),
+    packaged: app.isPackaged,
+    installable: false,
+    status: "idle" as const,
   },
 });
 const emit = () =>
@@ -496,7 +504,11 @@ function monitorCurrent(generation: number) {
 }
 async function automate(s: Streamer, generation: number) {
   if (!monitorCurrent(generation)) return;
-  const decision = decideAutomation(s, Date.now());
+  const decision = decideAutomation(
+    s,
+    Date.now(),
+    store.get("monitor.monitorSessionId"),
+  );
   s.automationRuntime = decision.runtime;
   if (decision.reason === "unauthorized" && s.automation.enabled && s.platform === "twitch")
     store.set("bot.status", "unauthorized-channel");
@@ -727,13 +739,10 @@ function start() {
   const generation = monitorGeneration;
   const monitorSessionId = randomUUID();
   userClosedForMonitorSession.clear();
-  if (store.get("settings.reopenOnNewMonitorSession"))
-    store.set(
-      "streamers",
-      store
-        .get("streamers")
-        .map((item) => ({ ...item, openedSessionId: undefined })),
-    );
+  store.set(
+    "streamers",
+    beginMonitorSession(store.get("streamers"), monitorSessionId),
+  );
   schedule(generation);
   scheduleAutomations(generation);
   store.set("monitor.status", "starting");
@@ -791,6 +800,8 @@ function register() {
       return fn(...args);
     });
   handle("state:get", () => state());
+  handle("updater:check", () => updater.check());
+  handle("updater:install", () => updater.install());
   handle("extension:ping", async () => {
     const payload = await extensionClient?.request("ping");
     store.set("extension", {
@@ -981,6 +992,16 @@ function register() {
   handle("kick:check", async () => {
     store.set("kick", await kickAuth.identity());
     emit();
+  });
+  handle("kick:test-message", async (streamerId) => {
+    if (typeof streamerId !== "string") throw new Error("Canal de Kick no válido.");
+    const streamer = store.get("streamers").find((item) => item.id === streamerId && item.platform === "kick");
+    if (!streamer) throw new Error("No se encontró el canal de Kick.");
+    const resolved = streamer.externalId ? streamer : { ...streamer, ...(await kickAuth.resolveChannel(streamer.normalizedName)) };
+    if (!resolved.externalId) throw new Error("No se pudo resolver broadcaster_user_id.");
+    const messageId = await kickAuth.send(resolved.externalId, sanitizeMessage(resolved.automation.message));
+    log(`Mensaje de prueba de Kick enviado (ID ${messageId}).`, "info", streamer);
+    return { messageId, broadcasterUserId: resolved.externalId };
   });
   handle("kick:disconnect", () => {
     kickAuth.clearTokens();
@@ -1323,6 +1344,12 @@ function updateTray() {
 }
 app.whenReady().then(async () => {
   migrate();
+  updater = new AppUpdater({
+    packaged: app.isPackaged,
+    installable: !process.env.PORTABLE_EXECUTABLE_FILE,
+    version: app.getVersion(),
+    changed: emit,
+  });
   Menu.setApplicationMenu(null);
   register();
   createWindow();
@@ -1379,9 +1406,11 @@ app.whenReady().then(async () => {
   });
   startAuthValidationTimer();
   await validateTwitchSession();
+  updater.start();
 });
 app.on("before-quit", () => {
   quitting = true;
+  updater?.stop();
   auth.cancelDevice();
   if (authValidationTimer) clearInterval(authValidationTimer);
   authValidationTimer = undefined;

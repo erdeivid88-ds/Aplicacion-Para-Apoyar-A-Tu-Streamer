@@ -8,6 +8,8 @@ import type {
 let settingsRevision = 0;
 contextBridge.exposeInMainWorld("api", {
   state: (): Promise<AppState> => ipcRenderer.invoke("state:get"),
+  checkForUpdates: () => ipcRenderer.invoke("updater:check"),
+  installUpdate: () => ipcRenderer.invoke("updater:install"),
   onState: (callback: (state: AppState) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, state: AppState) =>
       callback(state);
@@ -41,6 +43,7 @@ contextBridge.exposeInMainWorld("api", {
   saveKickConfiguration: (clientId: string, clientSecret: string, redirectUri: string) => ipcRenderer.invoke("kick:save-configuration", { clientId, clientSecret, redirectUri }),
   connectKick: () => ipcRenderer.invoke("kick:connect"),
   checkKick: () => ipcRenderer.invoke("kick:check"),
+  testKickMessage: (streamerId: string) => ipcRenderer.invoke("kick:test-message", streamerId),
   disconnectKick: () => ipcRenderer.invoke("kick:disconnect"),
   saveStreamer: (value: Partial<Streamer>) =>
     ipcRenderer.invoke("streamer:save", value),

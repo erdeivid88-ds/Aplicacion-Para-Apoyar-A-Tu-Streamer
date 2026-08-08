@@ -5,6 +5,7 @@ import {
   type Platform,
   type Settings,
   type Streamer,
+  type UpdateState,
 } from "../domain/types";
 import { MONITOR_LABELS, validateSettings } from "../domain/settings-ui";
 import {
@@ -27,6 +28,16 @@ import {
   Switch,
   Tooltip,
 } from "./components";
+
+function updateStatusText(update: UpdateState) {
+  if (update.status === "checking") return "Buscando actualizaciones…";
+  if (update.status === "current") return "Estás usando la última versión.";
+  if (update.status === "available") return `Nueva versión ${update.availableVersion} disponible.`;
+  if (update.status === "downloading") return `Descargando actualización… ${update.progress ?? 0} %`;
+  if (update.status === "ready") return `La versión ${update.availableVersion} está lista para instalar.`;
+  if (update.status === "error") return `Error al buscar actualizaciones: ${update.error ?? "error desconocido"}`;
+  return "Puedes buscar actualizaciones cuando quieras.";
+}
 
 const navigation = [
   ["Inicio", "⌂"],
@@ -74,7 +85,7 @@ export default function App() {
             {MONITOR_LABELS[state.monitor.status].replace(/^[^\p{L}]+/u, "")}
           </StatusBadge>
           <span className="topbar-brand">
-            Apoya a tu Streamer <small>1.1.0</small>
+            Apoya a tu Streamer <small>{state.updater.version}</small>
           </span>
         </div>
         {page === "Inicio" && <Home state={state} go={setPage} />}{" "}
@@ -1021,6 +1032,14 @@ function Automations({ state }: { state: AppState }) {
                     Enviados en este directo: {s.automationRuntime.sentCount} ·{" "}
                     {s.automationRuntime.paused ? "En pausa" : "Preparado"}
                   </small>
+                  {s.platform === "kick" && (
+                    <button onClick={() => void window.api.testKickMessage(s.id).then(
+                      (result) => alert(`Mensaje enviado. ID: ${result.messageId}`),
+                      (error) => alert(error instanceof Error ? error.message : String(error)),
+                    )}>
+                      Enviar prueba en Kick
+                    </button>
+                  )}
                 </>
               )}
             </Card>
@@ -1344,6 +1363,7 @@ function SettingsPage({ state }: { state: AppState }) {
     "Privacidad y datos",
     "Avanzado",
     "Diagnóstico",
+    "Acerca de",
     "Ayuda y soporte",
   ] as const;
   const [category, setCategory] =
@@ -1642,7 +1662,7 @@ function SettingsPage({ state }: { state: AppState }) {
               <pre className="diagnostic">
                 {JSON.stringify(
                   {
-                    version: "1.1.0",
+                    version: state.updater.version,
                     system: navigator.platform,
                     monitor: MONITOR_LABELS[state.monitor.status],
                     twitch: state.bot.status,
@@ -1664,7 +1684,7 @@ function SettingsPage({ state }: { state: AppState }) {
                   void window.api.copy(
                     JSON.stringify(
                       {
-                        version: "1.1.0",
+                        version: state.updater.version,
                         monitor: state.monitor.status,
                         twitch: state.bot.status,
                         kick: state.settings.platforms.kick.enabled,
@@ -1687,6 +1707,29 @@ function SettingsPage({ state }: { state: AppState }) {
             </>
           )}
           {category === "Ayuda y soporte" && <HelpContent state={state} />}
+          {category === "Acerca de" && (
+            <>
+              <h3>Apoya a tu Streamer</h3>
+              <p>Versión instalada: {state.updater.version}</p>
+              <p>
+                {state.updater.installable
+                  ? "Las actualizaciones se descargan en segundo plano y se instalan sólo con tu permiso."
+                  : "Las actualizaciones automáticas están disponibles en la versión instalada."}
+              </p>
+              <p>{updateStatusText(state.updater)}</p>
+              {state.updater.status === "ready" && state.updater.installable && (
+                <button className="primary" onClick={() => void window.api.installUpdate()}>
+                  Reiniciar e instalar
+                </button>
+              )}
+              <div className="card-actions">
+                <button disabled={state.updater.status === "checking"} onClick={() => void window.api.checkForUpdates()}>
+                  Buscar actualizaciones
+                </button>
+                <SupportActions state={state} compact />
+              </div>
+            </>
+          )}
         </Card>
       </div>
     </section>

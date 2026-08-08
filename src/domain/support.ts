@@ -6,7 +6,7 @@ export const TWITCH_DEVELOPER_URL = "https://dev.twitch.tv/console/apps";
 
 export function safeDiagnostic(state: AppState, system: string) {
   return {
-    version: "1.1.0",
+    version: state.updater.version,
     system,
     monitor: state.monitor.status,
     browserMode: state.settings.browserMode,

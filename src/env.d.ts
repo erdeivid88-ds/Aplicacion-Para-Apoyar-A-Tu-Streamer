@@ -9,6 +9,8 @@ declare global {
   interface Window {
     api: {
       state: () => Promise<AppState>;
+      checkForUpdates: () => Promise<void>;
+      installUpdate: () => Promise<void>;
       onState: (callback: (state: AppState) => void) => () => void;
       start: () => Promise<void>;
       stop: () => Promise<void>;
@@ -35,6 +37,7 @@ declare global {
       saveKickConfiguration: (clientId: string, clientSecret: string, redirectUri: string) => Promise<void>;
       connectKick: () => Promise<void>;
       checkKick: () => Promise<void>;
+      testKickMessage: (streamerId: string) => Promise<{ messageId: string; broadcasterUserId: string }>;
       disconnectKick: () => Promise<void>;
       saveStreamer: (value: Partial<Streamer>) => Promise<void>;
       resolveStreamer: (

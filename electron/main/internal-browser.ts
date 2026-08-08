@@ -22,11 +22,34 @@ export interface InternalTabInput {
   title: string;
 }
 const BAR_HEIGHT = 54;
+function kickAudioScript(volume: number) {
+  return `(() => {
+    const key = "__apoyaInternalKickAudio";
+    const old = window[key]; if (old) { old.observer?.disconnect(); old.timers?.forEach(clearTimeout); }
+    const control = { timers: [], attempts: 0, cancelled: false }; window[key] = control;
+    const label = (button) => button?.getAttribute("aria-label") || button?.getAttribute("title") || button?.getAttribute("aria-pressed") || "";
+    const attempt = () => { if (control.cancelled) return control.last;
+      const videos = [...document.querySelectorAll("video")].filter((video) => { const box=video.getBoundingClientRect(); return box.width>200&&box.height>100&&getComputedStyle(video).visibility!=="hidden"; }).sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight);
+      const video=videos[0]; const button=[...document.querySelectorAll('[role="button"],button')].find((item)=>/mute|unmute|silenciar|activar sonido|desmutear/i.test(label(item)));
+      const before=video?{videoMutedBefore:video.muted,volumeBefore:video.volume}:{}; const buttonBefore=label(button);
+      if(video){video.muted=false;video.defaultMuted=false;if(${volume}>0)video.volume=${volume};}
+      const visualMuted=/unmute|activar sonido|desmutear/i.test(buttonBefore);let clicked=false;
+      if(button&&video&&(video.muted||video.volume===0||visualMuted)){button.click();clicked=true;}
+      control.attempts++;control.last={videoFound:!!video,...before,videoMutedAfter:video?.muted,volumeAfter:video?.volume,muteButtonFound:!!button,muteButtonStateBefore:buttonBefore,muteButtonClicked:clicked,muteButtonStateAfter:label(button),attempts:control.attempts,finalSuccess:!!video&&!video.muted&&video.volume>0};
+      if(control.last.finalSuccess){control.observer?.disconnect();control.timers.forEach(clearTimeout);control.timers=[];} return control.last;
+    };
+    control.observer=new MutationObserver(attempt);control.observer.observe(document.documentElement,{childList:true,subtree:true});
+    [0,250,500,1000,2000,4000].forEach((delay)=>control.timers.push(setTimeout(attempt,delay)));
+    addEventListener("playing",attempt,{once:true,capture:true});addEventListener("canplay",attempt,{once:true,capture:true});
+    setTimeout(()=>{control.cancelled=true;control.observer?.disconnect();},4500);return attempt();
+  })()`;
+}
 export class InternalBrowserManager {
   internalBrowserWindow: BrowserWindow | null = null;
   readonly tabs = new Map<string, InternalTab>();
   activeInternalTabId?: string;
   private order: string[] = [];
+  private readonly kickVolumes = new Map<string, number>();
   private intentionalWindowClose = false;
   constructor(
     private onClosed: (
@@ -51,6 +74,7 @@ export class InternalBrowserManager {
         nodeIntegration: false,
         sandbox: true,
         backgroundThrottling: false,
+        autoplayPolicy: "no-user-gesture-required",
       },
     });
     window.webContents.setBackgroundThrottling(false);
@@ -118,6 +142,7 @@ export class InternalBrowserManager {
         nodeIntegration: false,
         sandbox: true,
         backgroundThrottling: false,
+        autoplayPolicy: "no-user-gesture-required",
       },
     });
     view.webContents.setBackgroundThrottling(false);
@@ -144,6 +169,20 @@ export class InternalBrowserManager {
       userClosed: false,
       openedAt: new Date().toISOString(),
     };
+    if (input.platform === "kick") {
+      const retry = () => {
+        const current = this.tabs.get(input.streamerId);
+        if (current && !current.muted)
+          void current.view.webContents.executeJavaScript(
+            kickAudioScript(this.kickVolumes.get(input.streamerId) ?? 1),
+            true,
+          ).catch(() => undefined);
+      };
+      view.webContents.on("did-start-loading", retry);
+      view.webContents.on("dom-ready", retry);
+      view.webContents.on("did-finish-load", retry);
+      view.webContents.on("did-navigate-in-page", retry);
+    }
     this.tabs.set(input.streamerId, tab);
     this.order.push(input.streamerId);
     window.contentView.addChildView(view);
@@ -169,16 +208,16 @@ export class InternalBrowserManager {
     if (!shouldUnmute)
       return { tabMuted: true, playerMuted: undefined, audioConfigured: true };
     const safeVolume = Math.min(1, Math.max(0, volume));
-    const player = (await tab.view.webContents.executeJavaScript(`(() => {
-      const media = [...document.querySelectorAll("video,audio")];
-      for (const element of media) { element.muted = false; element.defaultMuted = false; element.volume = ${safeVolume}; }
-      return { found: media.length > 0, playerMuted: media.some((element) => element.muted || element.volume === 0) };
-    })()`, true)) as { found: boolean; playerMuted: boolean };
+    this.kickVolumes.set(id, safeVolume);
+    const player = (await tab.view.webContents.executeJavaScript(
+      kickAudioScript(safeVolume),
+      true,
+    )) as { videoFound: boolean; videoMutedAfter?: boolean };
     this.toolbar();
     return {
       tabMuted: tab.view.webContents.isAudioMuted(),
-      playerMuted: player.playerMuted,
-      audioConfigured: player.found && !player.playerMuted,
+      playerMuted: player.videoMutedAfter,
+      audioConfigured: true,
     };
   }
   activate(id: string) {

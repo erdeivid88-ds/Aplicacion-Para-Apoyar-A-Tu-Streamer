@@ -43,13 +43,21 @@ export type AutomationDecision = {
 export function decideAutomation(
   streamer: Streamer,
   now: number,
+  monitorSessionId?: string,
 ): AutomationDecision {
   const config = normalizeAutomation(streamer.automation);
   let runtime = streamer.automationRuntime ?? defaultRuntime();
   if (!streamer.live || !streamer.sessionId)
     return { send: false, reason: "offline", runtime: defaultRuntime() };
-  if (runtime.sessionId !== streamer.sessionId)
-    runtime = { ...defaultRuntime(), sessionId: streamer.sessionId };
+  if (
+    runtime.sessionId !== streamer.sessionId ||
+    runtime.monitorSessionId !== monitorSessionId
+  )
+    runtime = {
+      ...defaultRuntime(),
+      sessionId: streamer.sessionId,
+      monitorSessionId,
+    };
   if (!config.enabled) return { send: false, reason: "disabled", runtime };
   if (!config.authorized || !config.authorizedAt)
     return { send: false, reason: "unauthorized", runtime };

@@ -49,6 +49,7 @@ export interface AutomationConfig {
 }
 export interface AutomationRuntime {
   sessionId?: string;
+  monitorSessionId?: string;
   sentCount: number;
   initialSent: boolean;
   lastSentAt?: string;
@@ -195,7 +196,17 @@ export interface AppState {
     backgroundThrottlingDisabled: boolean;
     suspended: boolean;
   };
+  updater: UpdateState;
 }
+export type UpdateState = {
+  version: string;
+  packaged: boolean;
+  installable: boolean;
+  status: "idle" | "checking" | "current" | "available" | "downloading" | "ready" | "error";
+  availableVersion?: string;
+  progress?: number;
+  error?: string;
+};
 export interface ExtensionStatus {
   connected: boolean;
   nativeHostConnected: boolean;
@@ -286,5 +297,11 @@ export const defaults: AppState = {
     scanTimerActive: false,
     backgroundThrottlingDisabled: true,
     suspended: false,
+  },
+  updater: {
+    version: "0.0.0",
+    packaged: false,
+    installable: false,
+    status: "idle",
   },
 };

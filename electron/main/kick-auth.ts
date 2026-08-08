@@ -99,10 +99,10 @@ export class KickAuth {
     this.secrets.set("tokens", this.encrypt(tokens));
     return tokens;
   }
-  private async tokens() {
+  private async tokens(forceRefresh = false) {
     const value = this.decrypt<Tokens>("tokens");
     if (!value) throw new Error("Conecta primero tu cuenta de Kick.");
-    if (new Date(value.expiresAt).getTime() > Date.now() + 60_000) return value;
+    if (!forceRefresh && new Date(value.expiresAt).getTime() > Date.now() + 60_000) return value;
     if (this.refreshPromise) return this.refreshPromise;
     const credentials = this.decrypt<Credentials>("credentials");
     if (!credentials) throw new Error("Configura primero la aplicación de Kick.");
@@ -112,12 +112,20 @@ export class KickAuth {
     })).finally(() => { this.refreshPromise = undefined; });
     return this.refreshPromise;
   }
-  async authorizedFetch(path: string, init: RequestInit = {}) {
-    const tokens = await this.tokens();
-    return fetch(`${API_URL}${path}`, {
+  async authorizedFetch(path: string, init: RequestInit = {}, retry401 = true) {
+    let tokens = await this.tokens();
+    let response = await fetch(`${API_URL}${path}`, {
       ...init,
       headers: { ...init.headers, Authorization: `Bearer ${tokens.accessToken}` },
     });
+    if (response.status === 401 && retry401) {
+      tokens = await this.tokens(true);
+      response = await fetch(`${API_URL}${path}`, {
+        ...init,
+        headers: { ...init.headers, Authorization: `Bearer ${tokens.accessToken}` },
+      });
+    }
+    return response;
   }
   async identity(): Promise<KickPublicState> {
     const tokens = await this.tokens();
@@ -171,14 +179,22 @@ export class KickAuth {
     return this.identity();
   }
   async send(broadcasterUserId: string, content: string) {
+    if (!/^\d+$/.test(broadcasterUserId) || Number(broadcasterUserId) <= 0)
+      throw new Error("La ID de broadcaster de Kick no es válida.");
+    const identity = await this.identity();
+    console.info("[kick-chat]", { senderAccountId: identity.userId, broadcasterUserId, chatWrite: identity.scopes?.includes("chat:write") === true, tokenActive: identity.status === "connected", endpoint: "/public/v1/chat", payload: { broadcaster_user_id: Number(broadcasterUserId), type: "user", contentLength: [...content].length } });
     const response = await this.authorizedFetch("/public/v1/chat", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify(kickChatBody(broadcasterUserId, content)),
     });
-    if (!response.ok) throw new Error(`Kick rechazó el mensaje (${response.status}).`);
-    const json = (await response.json()) as {
-      data?: { is_sent?: boolean; message_id?: string };
-    };
+    const raw = await response.text();
+    let json: { data?: { is_sent?: boolean; message_id?: string }; message?: string } = {};
+    try { json = JSON.parse(raw) as typeof json; } catch { /* respuesta no JSON */ }
+    console.info("[kick-chat-result]", { httpStatus: response.status, responseMessage: json.message, messageId: json.data?.message_id, finalSuccess: response.ok && json.data?.is_sent === true });
+    if (!response.ok) {
+      const retryAfter = response.headers.get("retry-after");
+      throw new Error(`Kick rechazó el mensaje (${response.status})${retryAfter ? `; reintentar en ${retryAfter} s` : ""}: ${json.message ?? "sin detalle"}.`);
+    }
     if (json.data?.is_sent !== true)
       throw new Error("Kick no confirmó el envío del mensaje.");
     return json.data.message_id;

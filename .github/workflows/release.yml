@@ -11,7 +11,11 @@ jobs:
       - uses: actions/setup-node@v4
         with: {node-version: 22, cache: npm}
       - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
       - run: npm test
+      - run: npm run test:extension
+      - run: npm run test:native-host
       - run: npm run build:win
       - shell: pwsh
         run: Get-ChildItem release -File | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $($_.Path | Split-Path -Leaf)" } | Set-Content release/SHA256SUMS.txt
