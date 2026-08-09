@@ -172,6 +172,94 @@ export function PlatformMark({ platform }: { platform: "twitch" | "kick" }) {
   );
 }
 
+export type IconName =
+  | "home"
+  | "users"
+  | "accounts"
+  | "browser"
+  | "activity"
+  | "guide"
+  | "settings"
+  | "power"
+  | "check"
+  | "warning"
+  | "plus"
+  | "arrow";
+export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
+  const paths: Record<IconName, ReactNode> = {
+    home: (
+      <>
+        <path d="m3 11 9-8 9 8" />
+        <path d="M5 10v10h14V10" />
+        <path d="M9 20v-6h6v6" />
+      </>
+    ),
+    users: (
+      <>
+        <circle cx="9" cy="8" r="4" />
+        <path d="M2.5 21c.7-4 2.8-6 6.5-6s5.8 2 6.5 6M16 4.5a4 4 0 0 1 0 7.5M17 15c2.5.4 4 2.4 4.5 5" />
+      </>
+    ),
+    accounts: (
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="3" />
+        <circle cx="9" cy="11" r="2" />
+        <path d="M6 16c.6-1.6 1.6-2.4 3-2.4s2.4.8 3 2.4M15 10h3M15 14h3" />
+      </>
+    ),
+    browser: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <path d="M3 9h18M7 6.5h.01M10 6.5h.01" />
+      </>
+    ),
+    activity: <path d="M4 12h3l2-6 4 12 2-6h5" />,
+    guide: (
+      <>
+        <path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H12v18H7.5A3.5 3.5 0 0 0 4 23Z" />
+        <path d="M20 5.5A3.5 3.5 0 0 0 16.5 2H12v18h4.5A3.5 3.5 0 0 1 20 23Z" />
+      </>
+    ),
+    settings: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19 15a2 2 0 0 0 .4 2l-2.4 2.4a2 2 0 0 0-2-.4 2 2 0 0 0-1 1.8h-4A2 2 0 0 0 9 19a2 2 0 0 0-2 .4L4.6 17A2 2 0 0 0 5 15a2 2 0 0 0-1.8-1v-4A2 2 0 0 0 5 9a2 2 0 0 0-.4-2L7 4.6A2 2 0 0 0 9 5a2 2 0 0 0 1-1.8h4A2 2 0 0 0 15 5a2 2 0 0 0 2-.4L19.4 7A2 2 0 0 0 19 9a2 2 0 0 0 1.8 1v4A2 2 0 0 0 19 15Z" />
+      </>
+    ),
+    power: (
+      <>
+        <path d="M12 2v10" />
+        <path d="M6.4 5.6a8 8 0 1 0 11.2 0" />
+      </>
+    ),
+    check: <path d="m5 12 4 4L19 6" />,
+    warning: (
+      <>
+        <path d="M12 3 2 21h20Z" />
+        <path d="M12 9v5M12 18h.01" />
+      </>
+    ),
+    plus: <path d="M12 5v14M5 12h14" />,
+    arrow: <path d="m9 18 6-6-6-6" />,
+  };
+  return (
+    <svg
+      className="ui-icon"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[name]}
+    </svg>
+  );
+}
+
 export function Modal({
   title,
   children,

@@ -104,4 +104,28 @@ describe("experiencia pública 1.1.0", () => {
     expect(css).toContain("overflow-x: hidden");
     expect(css).toContain("max-width: 760px");
   });
+  it("aplica el command center premium sin dependencias visuales externas", async () => {
+    const [app, components, css] = await Promise.all([
+      readFile("src/ui/App.tsx", "utf8"),
+      readFile("src/ui/components.tsx", "utf8"),
+      readFile("src/ui/styles.css", "utf8"),
+    ]);
+    expect(app).toContain("command-dashboard");
+    expect(app).toContain("system-health");
+    expect(app).toContain("topbar-connections");
+    expect(components).toContain('className="ui-icon"');
+    for (const token of [
+      "--bg-primary",
+      "--surface-hover",
+      "--glass",
+      "--border-hover",
+      "--text-primary",
+      "--radius-xl",
+      "--shadow-lg",
+      "--transition-normal",
+    ])
+      expect(css).toContain(token);
+    expect(css).toContain("monitor-pulse");
+    expect(css).toContain("grid-template-columns: 76px minmax(0, 1fr)");
+  });
 });

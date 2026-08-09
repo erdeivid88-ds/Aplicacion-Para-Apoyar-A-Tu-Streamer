@@ -25,6 +25,7 @@ import {
   Alert,
   Card,
   EmptyState,
+  Icon,
   Modal,
   PageHeader,
   PlatformMark,
@@ -59,6 +60,15 @@ const navigation = [
   ["Ajustes", "⚙"],
 ] as const;
 type Page = (typeof navigation)[number][0];
+const navigationIcon: Record<Page, import("./components").IconName> = {
+  Inicio: "home",
+  Streamers: "users",
+  Cuentas: "accounts",
+  Navegador: "browser",
+  Actividad: "activity",
+  "Guía rápida": "guide",
+  Ajustes: "settings",
+};
 
 export default function App() {
   const [state, setState] = useState<AppState>();
@@ -89,23 +99,7 @@ export default function App() {
     <div className="app-shell">
       <Sidebar page={page} setPage={setPage} state={state} />
       <main id="main-content" tabIndex={-1}>
-        <div className="topbar">
-          <StatusBadge
-            tone={
-              state.monitor.status === "active"
-                ? "success"
-                : state.monitor.status === "partial-error"
-                  ? "warning"
-                  : "neutral"
-            }
-          >
-            {MONITOR_LABELS[state.monitor.status].replace(/^[^\p{L}]+/u, "")}
-          </StatusBadge>
-          <span className="topbar-brand">
-            <img src={logoLurks} alt="" /> Apoya a tu Streamer{" "}
-            <small>{state.updater.version}</small>
-          </span>
-        </div>
+        <Topbar page={page} state={state} />
         {page === "Inicio" && <Home state={state} go={setPage} />}{" "}
         {page === "Streamers" && <Streamers state={state} />}{" "}
         {page === "Cuentas" && <Platforms state={state} />}{" "}
@@ -148,6 +142,34 @@ export default function App() {
   );
 }
 
+function Topbar({ page, state }: { page: Page; state: AppState }) {
+  const descriptions: Record<Page, string> = {
+    Inicio: "Tu centro de control",
+    Streamers: "Canales que acompañas",
+    Cuentas: "Conexiones de Twitch y Kick",
+    Navegador: "Dónde se abren los directos",
+    Actividad: "Todo lo que hace la aplicación",
+    "Guía rápida": "Centro de aprendizaje",
+    Ajustes: "Personaliza tu experiencia",
+  };
+  return (
+    <header className="topbar">
+      <div className="topbar-title">
+        <small>{descriptions[page]}</small>
+        <strong>{page}</strong>
+      </div>
+      <div className="topbar-connections" aria-label="Estado de cuentas">
+        <span className={state.bot.status === "connected" ? "connected" : ""}>
+          <i /> Twitch
+        </span>
+        <span className={state.kick.status === "connected" ? "connected" : ""}>
+          <i /> Kick
+        </span>
+      </div>
+    </header>
+  );
+}
+
 function Sidebar({
   page,
   setPage,
@@ -168,7 +190,7 @@ function Sidebar({
         </div>
       </div>
       <nav aria-label="Navegación principal">
-        {navigation.map(([name, icon]) => (
+        {navigation.map(([name]) => (
           <button
             key={name}
             className={page === name ? "active" : ""}
@@ -176,7 +198,9 @@ function Sidebar({
             title={name}
             onClick={() => setPage(name)}
           >
-            <span aria-hidden="true">{icon}</span>
+            <span aria-hidden="true">
+              <Icon name={navigationIcon[name]} />
+            </span>
             <span>{name}</span>
             {name === "Cuentas" && state.bot.status === "connected" && (
               <i className="nav-dot success" />
@@ -210,7 +234,9 @@ function Sidebar({
 function Home({ state, go }: { state: AppState; go: (p: Page) => void }) {
   const live = state.streamers.filter((x) => x.live);
   return (
-    <section>
+    <section
+      className={`command-dashboard ${state.monitor.status !== "off" ? "monitor-active" : ""}`}
+    >
       <PageHeader
         title="Apoya a tu Streamer"
         description="Mantén tus streamers favoritos abiertos automáticamente mientras están en directo."
@@ -236,7 +262,7 @@ function Home({ state, go }: { state: AppState; go: (p: Page) => void }) {
           )
         }
       />
-      <div className="hero-card">
+      <div className="hero-card command-hero">
         <div>
           <StatusBadge
             tone={state.monitor.status === "active" ? "success" : "info"}
@@ -263,7 +289,7 @@ function Home({ state, go }: { state: AppState; go: (p: Page) => void }) {
           ↻ Comprobar ahora
         </button>
       </div>
-      <div className="summary-grid">
+      <div className="summary-grid command-metrics">
         <Summary
           icon="♡"
           value={state.streamers.length}
@@ -346,6 +372,31 @@ function Home({ state, go }: { state: AppState; go: (p: Page) => void }) {
           ))}
         </div>
       )}
+      <div
+        className={`system-health ${state.bot.status === "connected" && (state.settings.browserMode !== "extension" || state.extension.connected) ? "ready" : "attention"}`}
+      >
+        <span>
+          <Icon name={state.bot.status === "connected" ? "check" : "warning"} />
+        </span>
+        <div>
+          <b>
+            {state.bot.status === "connected"
+              ? "Sistema preparado"
+              : "No está todo preparado"}
+          </b>
+          <small>
+            Twitch{" "}
+            {state.bot.status === "connected" ? "conectado" : "pendiente"}
+            {" · "}Kick{" "}
+            {state.kick.status === "connected" ? "conectado" : "pendiente"}
+            {" · "}Extensión{" "}
+            {state.extension.connected ? "conectada" : "pendiente"}
+          </small>
+        </div>
+        {state.bot.status !== "connected" && (
+          <button onClick={() => go("Cuentas")}>Solucionar</button>
+        )}
+      </div>
       <QuickAlerts state={state} go={go} />
     </section>
   );
@@ -2617,6 +2668,7 @@ function GuideCard({
       <span aria-hidden="true">{icon}</span>
       <h3>{title}</h3>
       <p>{text}</p>
+      <small className="guide-duration">2 min</small>
       <button onClick={action}>Ver guía →</button>
     </Card>
   );
