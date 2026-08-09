@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1
+
+- Mejora el responsive general de la aplicación para ventanas compactas y de poca altura.
+- Corrige el layout de Repetición con selectores claros para los modos Limitada y Sin límite.
+- Reorganiza el Hero Monitor para separar el estado visual de la acción Comprobar ahora.
+- Adapta grids, ajustes, navegación, actividad y modales a ventanas pequeñas.
+
 ## 1.1.0
 
 - Añade OAuth oficial de Kick con aplicación propia, Authorization Code, PKCE S256, callback localhost fijo, introspección y renovación cifrada.

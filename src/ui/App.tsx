@@ -263,7 +263,7 @@ function Home({ state, go }: { state: AppState; go: (p: Page) => void }) {
         }
       />
       <div className="hero-card command-hero">
-        <div>
+        <div className="hero-copy">
           <StatusBadge
             tone={state.monitor.status === "active" ? "success" : "info"}
           >
@@ -282,12 +282,22 @@ function Home({ state, go }: { state: AppState; go: (p: Page) => void }) {
             .
           </p>
         </div>
-        <button
-          className="button subtle"
-          onClick={() => void window.api.scan()}
-        >
-          ↻ Comprobar ahora
-        </button>
+        <div className="monitor-column">
+          <div className="monitor-visual" aria-label="Estado del monitor">
+            <small>MONITOR</small>
+            <strong>
+              {state.monitor.status === "off" ? "DETENIDO" : "ACTIVO"}
+            </strong>
+          </div>
+          <div className="monitor-actions">
+            <button
+              className="button subtle"
+              onClick={() => void window.api.scan()}
+            >
+              ↻ Comprobar ahora
+            </button>
+          </div>
+        </div>
       </div>
       <div className="summary-grid command-metrics">
         <Summary
@@ -1610,12 +1620,15 @@ function Automations({ state }: { state: AppState }) {
                         <option value="60">1 hora</option>
                       </select>
                     </SettingRow>
-                    <SettingRow
-                      title="Repetición"
-                      description="Elige cuántos mensajes se envían por directo."
-                    >
-                      <div>
-                        <label>
+                    <div className="repetition-setting">
+                      <div className="repetition-heading">
+                        <h4>Repetición</h4>
+                        <p>Elige cómo se repiten los mensajes.</p>
+                      </div>
+                      <div className="repetition-options">
+                        <label
+                          className={`repetition-option ${s.automation.maxPerStream !== null ? "selected" : ""}`}
+                        >
                           <input
                             type="radio"
                             name={`repeat-limit-${s.id}`}
@@ -1631,9 +1644,16 @@ function Automations({ state }: { state: AppState }) {
                               })
                             }
                           />
-                          Limitada
-                        </label>{" "}
-                        <label>
+                          <span>
+                            <b>Limitada</b>
+                            <small>
+                              Detiene los mensajes al llegar al máximo.
+                            </small>
+                          </span>
+                        </label>
+                        <label
+                          className={`repetition-option ${s.automation.maxPerStream === null ? "selected" : ""}`}
+                        >
                           <input
                             type="radio"
                             name={`repeat-limit-${s.id}`}
@@ -1648,18 +1668,23 @@ function Automations({ state }: { state: AppState }) {
                               })
                             }
                           />
-                          Sin límite
+                          <span>
+                            <b>Sin límite</b>
+                            <small>Se repiten durante todo el directo.</small>
+                          </span>
                         </label>
+                      </div>
+                      <div className="repetition-detail">
                         {s.automation.maxPerStream === null ? (
-                          <small className="muted">
+                          <p className="muted">
                             Los mensajes se seguirán enviando durante todo el
                             directo según el intervalo configurado. Se detendrán
                             automáticamente cuando termine el directo o apagues
                             el monitor.
-                          </small>
+                          </p>
                         ) : (
-                          <label>
-                            Máximo de mensajes
+                          <label className="maximum-messages">
+                            <span>Máximo de envíos</span>
                             <input
                               type="number"
                               min="1"
@@ -1686,7 +1711,7 @@ function Automations({ state }: { state: AppState }) {
                           </label>
                         )}
                       </div>
-                    </SettingRow>
+                    </div>
                   </div>
                   <small className="muted">
                     Enviados en este directo: {s.automationRuntime.sentCount} ·{" "}
