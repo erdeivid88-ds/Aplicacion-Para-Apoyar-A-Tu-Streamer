@@ -24,6 +24,10 @@ export type BotStatus =
   | "paused";
 export const DEFAULT_AUTO_MESSAGE = "HeyGuys HeyGuys HeyGuys";
 export const DEFAULT_KICK_AUTO_MESSAGE = "👋👋👋";
+export interface AutomaticMessage {
+  id: string;
+  text: string;
+}
 export type OpenStreamResult = {
   accepted: boolean;
   mode: "system" | "extension" | "internal";
@@ -41,17 +45,21 @@ export interface AutomationConfig {
   enabled: boolean;
   authorized: boolean;
   authorizedAt?: string;
+  /** Legacy mirror of the first sequence item. */
   message: string;
+  automaticMessages: AutomaticMessage[];
   sendOnStart: boolean;
   repeat: boolean;
   intervalMinutes: number;
-  maxPerStream: number;
+  maxPerStream: number | null;
+  lastLimitedMaxPerStream: number;
 }
 export interface AutomationRuntime {
   sessionId?: string;
   monitorSessionId?: string;
   sentCount: number;
   initialSent: boolean;
+  startedAt?: string;
   lastSentAt?: string;
   consecutiveErrors: number;
   paused: boolean;
@@ -234,10 +242,18 @@ export const defaultAutomation = (
   authorized: false,
   message:
     platform === "kick" ? DEFAULT_KICK_AUTO_MESSAGE : DEFAULT_AUTO_MESSAGE,
+  automaticMessages: [
+    {
+      id: "default-message",
+      text:
+        platform === "kick" ? DEFAULT_KICK_AUTO_MESSAGE : DEFAULT_AUTO_MESSAGE,
+    },
+  ],
   sendOnStart: true,
   repeat: false,
   intervalMinutes: 15,
   maxPerStream: 5,
+  lastLimitedMaxPerStream: 5,
 });
 export const defaultRuntime = (): AutomationRuntime => ({
   sentCount: 0,

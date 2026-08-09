@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import {
   decideAutomation,
   normalizeAutomation,
+  formatAutomationSuccess,
   recordFailure,
   recordSuccess,
   sanitizeMessage,
@@ -149,8 +150,12 @@ function migrate() {
         (raw.schemaVersion ?? 0) < 7 &&
         s.platform === "kick" &&
         automation.message === DEFAULT_AUTO_MESSAGE
-      )
+      ) {
         automation.message = DEFAULT_KICK_AUTO_MESSAGE;
+        automation.automaticMessages = [
+          { id: "default-message", text: DEFAULT_KICK_AUTO_MESSAGE },
+        ];
+      }
       if (
         (raw.schemaVersion ?? 0) < 7 &&
         automation.enabled &&
@@ -661,7 +666,7 @@ async function automate(s: Streamer, generation: number) {
       const broadcasterId =
         s.externalId ?? (await auth.resolveBroadcaster(s.normalizedName));
       if (!monitorCurrent(generation)) return;
-      await auth.send(broadcasterId, sanitizeMessage(s.automation.message));
+      await auth.send(broadcasterId, decision.message!.text);
       s.externalId = broadcasterId;
       store.set("bot.status", "connected");
     } else {
@@ -672,7 +677,7 @@ async function automate(s: Streamer, generation: number) {
         "info",
         s,
       );
-      await kickAuth.send(s.externalId, sanitizeMessage(s.automation.message));
+      await kickAuth.send(s.externalId, decision.message!.text);
       store.set("kick.status", "connected");
     }
     if (!monitorCurrent(generation)) return;
@@ -681,7 +686,12 @@ async function automate(s: Streamer, generation: number) {
       new Date().toISOString(),
     );
     log(
-      `Mensaje automático enviado (${s.automationRuntime.sentCount}/${s.automation.maxPerStream}).`,
+      formatAutomationSuccess(
+        s.automationRuntime.sentCount,
+        s.automation.maxPerStream,
+        decision.sequenceIndex!,
+        decision.sequenceLength!,
+      ),
       "info",
       s,
     );

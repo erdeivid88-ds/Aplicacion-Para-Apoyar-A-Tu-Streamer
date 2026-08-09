@@ -1360,6 +1360,105 @@ function Platforms({ state }: { state: AppState }) {
   );
 }
 
+function sequencePreview(length: number) {
+  const label = (value: number) => String(value).padStart(2, "0");
+  if (length <= 6)
+    return `${Array.from({ length }, (_, index) => label(index + 1)).join(" → ")} → ${label(1)}`;
+  return `01 → 02 → 03 → 04 → … → ${label(length)} → 01`;
+}
+
+function SequenceMessageEditor({
+  streamer,
+  index,
+}: {
+  streamer: Streamer;
+  index: number;
+}) {
+  const item = streamer.automation.automaticMessages[index];
+  const [text, setText] = useState(item.text);
+  useEffect(() => setText(item.text), [item.id, item.text]);
+  const saveMessages = (
+    automaticMessages: typeof streamer.automation.automaticMessages,
+  ) =>
+    void window.api.saveStreamer({
+      ...streamer,
+      automation: { ...streamer.automation, automaticMessages },
+    });
+  const move = (direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= streamer.automation.automaticMessages.length)
+      return;
+    const next = [...streamer.automation.automaticMessages];
+    [next[index], next[target]] = [next[target], next[index]];
+    saveMessages(next);
+  };
+  return (
+    <article className="sequence-message">
+      <div className="sequence-message-head">
+        <b>Mensaje {String(index + 1).padStart(2, "0")}</b>
+        <div className="sequence-actions">
+          <button
+            disabled={index === 0}
+            onClick={() => move(-1)}
+            aria-label="Subir mensaje"
+          >
+            ↑
+          </button>
+          <button
+            disabled={
+              index === streamer.automation.automaticMessages.length - 1
+            }
+            onClick={() => move(1)}
+            aria-label="Bajar mensaje"
+          >
+            ↓
+          </button>
+          <button
+            disabled={streamer.automation.automaticMessages.length >= 200}
+            onClick={() => {
+              const next = [...streamer.automation.automaticMessages];
+              next.splice(index + 1, 0, {
+                id: crypto.randomUUID(),
+                text: item.text,
+              });
+              saveMessages(next);
+            }}
+          >
+            Duplicar
+          </button>
+          <button
+            disabled={streamer.automation.automaticMessages.length === 1}
+            onClick={() =>
+              saveMessages(
+                streamer.automation.automaticMessages.filter(
+                  (message) => message.id !== item.id,
+                ),
+              )
+            }
+          >
+            Eliminar
+          </button>
+        </div>
+      </div>
+      <textarea
+        maxLength={500}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={() => {
+          const clean = text.trim();
+          if (!clean) return setText(item.text);
+          saveMessages(
+            streamer.automation.automaticMessages.map((message) =>
+              message.id === item.id ? { ...message, text: clean } : message,
+            ),
+          );
+        }}
+      />
+      <small className="muted">{text.length} / 500 caracteres</small>
+    </article>
+  );
+}
+
 function Automations({ state }: { state: AppState }) {
   return (
     <section>
@@ -1403,20 +1502,73 @@ function Automations({ state }: { state: AppState }) {
               </div>
               {
                 <>
-                  <SettingRow
-                    title="Mensaje"
-                    description="El texto que se enviará mientras el directo esté activo."
-                  >
-                    <input
-                      maxLength={500}
-                      defaultValue={s.automation.message}
-                      onBlur={(e) =>
+                  <section className="message-sequence">
+                    <div className="sequence-heading">
+                      <div>
+                        <h4>Secuencia de mensajes</h4>
+                        <p>
+                          Los mensajes se enviarán en orden y volverán a empezar
+                          desde el primero al terminar la lista.
+                        </p>
+                      </div>
+                      <b>
+                        {s.automation.automaticMessages.length} / 200 mensajes
+                      </b>
+                    </div>
+                    <div className="sequence-flow" aria-label="Orden de envío">
+                      Orden de envío:{" "}
+                      {sequencePreview(s.automation.automaticMessages.length)}
+                    </div>
+                    <div className="sequence-list">
+                      {s.automation.automaticMessages.map((message, index) => (
+                        <SequenceMessageEditor
+                          key={message.id}
+                          streamer={s}
+                          index={index}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      disabled={s.automation.automaticMessages.length >= 200}
+                      onClick={() =>
                         void window.api.saveStreamer({
                           ...s,
                           automation: {
                             ...s.automation,
-                            message: e.target.value,
+                            automaticMessages: [
+                              ...s.automation.automaticMessages,
+                              {
+                                id: crypto.randomUUID(),
+                                text: "Nuevo mensaje",
+                              },
+                            ],
                           },
+                        })
+                      }
+                    >
+                      + Añadir mensaje
+                    </button>
+                    <p className="muted sequence-example">
+                      Con {s.automation.automaticMessages.length} mensajes y un
+                      intervalo de {s.automation.intervalMinutes} minutos: ahora
+                      Mensaje 1 → {s.automation.intervalMinutes} min Mensaje
+                      {s.automation.automaticMessages.length > 1
+                        ? " 2"
+                        : " 1"}{" "}
+                      → vuelve a empezar al terminar.
+                    </p>
+                  </section>
+                  <SettingRow
+                    title="Enviar el primer mensaje al entrar"
+                    description="Si se desactiva, esperará el intervalo antes del Mensaje 1."
+                  >
+                    <Switch
+                      label="Enviar el primer mensaje al entrar"
+                      checked={s.automation.sendOnStart}
+                      onChange={(sendOnStart) =>
+                        void window.api.saveStreamer({
+                          ...s,
+                          automation: { ...s.automation, sendOnStart },
                         })
                       }
                     />
@@ -1459,24 +1611,81 @@ function Automations({ state }: { state: AppState }) {
                       </select>
                     </SettingRow>
                     <SettingRow
-                      title="Máximo por directo"
-                      description="Evita enviar demasiados mensajes."
+                      title="Repetición"
+                      description="Elige cuántos mensajes se envían por directo."
                     >
-                      <input
-                        type="number"
-                        min="1"
-                        max="5"
-                        value={s.automation.maxPerStream}
-                        onChange={(e) =>
-                          void window.api.saveStreamer({
-                            ...s,
-                            automation: {
-                              ...s.automation,
-                              maxPerStream: +e.target.value,
-                            },
-                          })
-                        }
-                      />
+                      <div>
+                        <label>
+                          <input
+                            type="radio"
+                            name={`repeat-limit-${s.id}`}
+                            checked={s.automation.maxPerStream !== null}
+                            onChange={() =>
+                              void window.api.saveStreamer({
+                                ...s,
+                                automation: {
+                                  ...s.automation,
+                                  maxPerStream:
+                                    s.automation.lastLimitedMaxPerStream,
+                                },
+                              })
+                            }
+                          />
+                          Limitada
+                        </label>{" "}
+                        <label>
+                          <input
+                            type="radio"
+                            name={`repeat-limit-${s.id}`}
+                            checked={s.automation.maxPerStream === null}
+                            onChange={() =>
+                              void window.api.saveStreamer({
+                                ...s,
+                                automation: {
+                                  ...s.automation,
+                                  maxPerStream: null,
+                                },
+                              })
+                            }
+                          />
+                          Sin límite
+                        </label>
+                        {s.automation.maxPerStream === null ? (
+                          <small className="muted">
+                            Los mensajes se seguirán enviando durante todo el
+                            directo según el intervalo configurado. Se detendrán
+                            automáticamente cuando termine el directo o apagues
+                            el monitor.
+                          </small>
+                        ) : (
+                          <label>
+                            Máximo de mensajes
+                            <input
+                              type="number"
+                              min="1"
+                              max="9999"
+                              step="1"
+                              value={s.automation.maxPerStream}
+                              onChange={(e) => {
+                                const value = e.currentTarget.valueAsNumber;
+                                if (
+                                  Number.isInteger(value) &&
+                                  value >= 1 &&
+                                  value <= 9999
+                                )
+                                  void window.api.saveStreamer({
+                                    ...s,
+                                    automation: {
+                                      ...s.automation,
+                                      maxPerStream: value,
+                                      lastLimitedMaxPerStream: value,
+                                    },
+                                  });
+                              }}
+                            />
+                          </label>
+                        )}
+                      </div>
                     </SettingRow>
                   </div>
                   <small className="muted">
@@ -2966,8 +3175,7 @@ function botLabel(status: AppState["bot"]["status"]) {
   )[status];
 }
 function friendlyActivity(text: string) {
-  if (/mensaje automático enviado/i.test(text))
-    return "Mensaje automático enviado";
+  if (/mensaje automático.*enviado/i.test(text)) return text;
   if (/canal abierto/i.test(text)) return "Canal abierto";
   if (/monitor.*(?:activ|inici)/i.test(text)) return "Monitor activado";
   if (/monitor.*(?:apag|deten)/i.test(text)) return "Monitor desactivado";
