@@ -31,11 +31,39 @@ describe("integración de audio Kick", () => {
   it("registra la tab antes de responder open y usa el mismo registro para audio", () => {
     const worker = readFileSync("browser-extension/service-worker.ts", "utf8");
     const registerAt = worker.indexOf("await registry.register(item)");
-    const openedAt = worker.indexOf("response(m,true,{...item,created:true}");
+    const openedAt = worker.indexOf(
+      "response(m, true, { ...item, created: true })",
+    );
     expect(registerAt).toBeGreaterThan(0);
     expect(openedAt).toBeGreaterThan(registerAt);
-    expect(worker).toContain("registry.getManagedTab(tabId,m.appSessionId)");
+    expect(worker).toContain("registry.getManagedTab(");
     expect(worker).not.toContain('throw new Error("not_managed")');
+  });
+
+  it("espera readiness antes de asegurar audio y no sintetiza M", () => {
+    const readyAt = worker.indexOf("await readyKickTab");
+    const audioAt = worker.indexOf("configureManagedKickPlayback", readyAt);
+    expect(readyAt).toBeGreaterThan(0);
+    expect(audioAt).toBeGreaterThan(readyAt);
+    expect(worker).not.toContain("KeyboardEvent");
+    expect(worker).not.toContain('keyCode: "M"');
+  });
+
+  it("comprueba estado, intenta DOM y solo después el botón semántico", () => {
+    const player = worker.slice(
+      worker.indexOf("async function configureKickPlayer"),
+      worker.indexOf("async function onMessage"),
+    );
+    const alreadyReadyAt = player.indexOf("alreadyReady");
+    const domAt = player.indexOf("video.muted = false");
+    const semanticAt = player.indexOf("buttonIndicatesMuted");
+    const clickAt = player.indexOf("muteButton.click()");
+    expect(alreadyReadyAt).toBeGreaterThan(0);
+    expect(domAt).toBeGreaterThan(alreadyReadyAt);
+    expect(semanticAt).toBeGreaterThan(domAt);
+    expect(clickAt).toBeGreaterThan(semanticAt);
+    expect(player).toContain("domUnmuteAttempted");
+    expect(player).toContain("buttonUnmuteAttempted");
   });
 
   it("no emite el resumen heredado para Kick y conserva Twitch", () => {

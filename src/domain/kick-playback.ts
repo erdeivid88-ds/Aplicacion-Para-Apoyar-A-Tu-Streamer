@@ -8,16 +8,23 @@ export type KickPlayerActivation = {
   muteButtonClicked: boolean;
   playbackReady: boolean;
   attempts: number;
+  errorCode?:
+    "PLAYER_NOT_FOUND" | "PLAYER_UNMUTE_FAILED" | "KICK_SHORTCUT_UNMUTE_FAILED";
 };
 
-export type KickPlaybackResult = KickPlayerActivation & {
+export type KickPlaybackResult = Omit<KickPlayerActivation, "errorCode"> & {
   browserTabMuted?: boolean;
   browserTabMutedBefore?: boolean;
   browserTabMutedAfter?: boolean;
   webContentsMutedBefore?: boolean;
   webContentsMutedAfter?: boolean;
   success: boolean;
-  errorCode?: "PLAYER_UNMUTE_FAILED" | "OUTPUT_MUTE_FAILED";
+  errorCode?:
+    | "PLAYER_NOT_FOUND"
+    | "PLAYER_UNMUTE_FAILED"
+    | "KICK_SHORTCUT_UNMUTE_FAILED"
+    | "TAB_MUTE_FAILED"
+    | "WEB_CONTENTS_MUTE_FAILED";
 };
 
 export async function configureManagedKickPlayback(
@@ -47,7 +54,9 @@ export async function configureManagedKickPlayback(
             webContentsMutedAfter: outputBefore,
           }),
       success: false,
-      errorCode: "PLAYER_UNMUTE_FAILED",
+      errorCode:
+        player.errorCode ??
+        (player.playerFound ? "PLAYER_UNMUTE_FAILED" : "PLAYER_NOT_FOUND"),
     };
   await setOutputMuted(true);
   const outputAfter = await getOutputMuted();
@@ -64,6 +73,10 @@ export async function configureManagedKickPlayback(
           webContentsMutedAfter: outputAfter,
         }),
     success: outputAfter,
-    errorCode: outputAfter ? undefined : "OUTPUT_MUTE_FAILED",
+    errorCode: outputAfter
+      ? undefined
+      : output === "browserTab"
+        ? "TAB_MUTE_FAILED"
+        : "WEB_CONTENTS_MUTE_FAILED",
   };
 }

@@ -23,6 +23,58 @@ export interface InternalTabInput {
   title: string;
 }
 const BAR_HEIGHT = 54;
+type ShortcutWebContents = {
+  getURL(): string;
+  isDestroyed(): boolean;
+  sendInputEvent(event: { type: "keyDown" | "keyUp"; keyCode: string }): void;
+  executeJavaScript(script: string, userGesture?: boolean): Promise<any>;
+};
+
+const kickPlayerStateScript = `(() => {
+  const videos=[...document.querySelectorAll("video")].filter((video)=>{const box=video.getBoundingClientRect();return box.width>200&&box.height>100&&getComputedStyle(video).visibility!=="hidden";}).sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight);
+  const video=videos[0];
+  return {playerFound:Boolean(video),playerMutedAfter:video?.muted??null,playerVolumeAfter:video?.volume??null,playbackReady:Boolean(video&&!video.muted&&video.volume>0)};
+})()`;
+
+export async function toggleKickMuteWithShortcut(
+  webContents: ShortcutWebContents,
+  canReceiveInput: boolean,
+) {
+  const diagnostic = inspectKickUrl(webContents.getURL(), "webContents.getURL");
+  if (!diagnostic.success || webContents.isDestroyed() || !canReceiveInput)
+    return { shortcutAttempted: false, shortcutResult: "not_available" };
+  const before = await webContents.executeJavaScript(
+    kickPlayerStateScript,
+    true,
+  );
+  if (
+    !before?.playerFound ||
+    (before.playerMutedAfter === false && before.playerVolumeAfter > 0)
+  )
+    return {
+      ...before,
+      shortcutAttempted: false,
+      shortcutResult: "not_needed",
+    };
+  webContents.sendInputEvent({ type: "keyDown", keyCode: "M" });
+  webContents.sendInputEvent({ type: "keyUp", keyCode: "M" });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const after = await webContents.executeJavaScript(
+    kickPlayerStateScript,
+    true,
+  );
+  const success =
+    after?.playerFound &&
+    after.playerMutedAfter === false &&
+    after.playerVolumeAfter > 0;
+  return {
+    ...after,
+    shortcutAttempted: true,
+    shortcutResult: success ? "unmuted" : "failed",
+    errorCode: success ? undefined : "KICK_SHORTCUT_UNMUTE_FAILED",
+  };
+}
+
 function kickAudioScript(volume: number) {
   return `(async () => {
     if(location.protocol!=="https:"||!(location.hostname==="kick.com"||location.hostname==="www.kick.com"))return{playerFound:false,playerMutedBefore:null,playerMutedAfter:null,playerVolumeBefore:null,playerVolumeAfter:null,muteButtonFound:false,muteButtonClicked:false,playbackReady:false,attempts:0,errorCode:"NOT_KICK_TAB"};
@@ -30,18 +82,20 @@ function kickAudioScript(volume: number) {
     const old = window[key]; if (old) { old.observer?.disconnect(); old.timers?.forEach(clearTimeout); }
     const control = { timers: [], attempts: 0, cancelled: false }; window[key] = control;
     const label = (button) => button?.getAttribute("aria-label") || button?.getAttribute("title") || button?.getAttribute("aria-pressed") || "";
-    const attempt = () => { if (control.cancelled) return control.last;
+    const attempt = async () => { if (control.cancelled) return control.last;
       const videos = [...document.querySelectorAll("video")].filter((video) => { const box=video.getBoundingClientRect(); return box.width>200&&box.height>100&&getComputedStyle(video).visibility!=="hidden"; }).sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight);
       const video=videos[0]; const button=[...document.querySelectorAll('[role="button"],button')].find((item)=>/mute|unmute|silenciar|activar sonido|desmutear/i.test(label(item)));
       const before=video?{playerMutedBefore:video.muted,playerVolumeBefore:video.volume}:{playerMutedBefore:null,playerVolumeBefore:null}; const buttonBefore=label(button);
-      if(video){video.muted=false;video.defaultMuted=false;if(${volume}>0)video.volume=${volume};video.dispatchEvent(new Event("volumechange",{bubbles:true}));}
+      const alreadyReady=!!video&&!video.muted&&video.volume>0;let domUnmuteAttempted=false;
+      if(video&&!alreadyReady){domUnmuteAttempted=true;video.muted=false;video.defaultMuted=false;if(video.volume===0)video.volume=${volume}>0?${volume}:1;video.dispatchEvent(new Event("volumechange",{bubbles:true}));await Promise.resolve();}
       let clicked=false;
-      if(button&&video&&(video.muted||video.volume===0)){button.click();clicked=true;}
-      control.attempts++;control.last={playerFound:!!video,...before,playerMutedAfter:video?.muted??null,playerVolumeAfter:video?.volume??null,muteButtonFound:!!button,muteButtonStateBefore:buttonBefore,muteButtonClicked:clicked,muteButtonStateAfter:label(button),attempts:control.attempts,playbackReady:!!video&&!video.muted&&video.volume>0}; return control.last;
+      const buttonIndicatesMuted=!!button&&(/unmute|activar sonido|desmutear/i.test(buttonBefore)||button.getAttribute("aria-pressed")==="true");
+      if(button&&video&&(video.muted||video.volume===0)&&buttonIndicatesMuted){button.click();clicked=true;await Promise.resolve();}
+      control.attempts++;control.last={playerFound:!!video,...before,playerMutedAfter:video?.muted??null,playerVolumeAfter:video?.volume??null,muteButtonFound:!!button,muteButtonStateBefore:buttonBefore,muteButtonClicked:clicked,muteButtonStateAfter:label(button),domUnmuteAttempted,buttonUnmuteAttempted:clicked,shortcutAttempted:false,attempts:control.attempts,playbackReady:!!video&&!video.muted&&video.volume>0}; return control.last;
     };
-    control.observer=new MutationObserver(attempt);control.observer.observe(document.documentElement,{childList:true,subtree:true});
-    addEventListener("loadedmetadata",attempt,{once:true,capture:true});addEventListener("playing",attempt,{once:true,capture:true});addEventListener("canplay",attempt,{once:true,capture:true});
-    for(const delay of [0,250,250,500,1000,2000]){if(delay)await new Promise((resolve)=>setTimeout(resolve,delay));const state=attempt();if(state?.playbackReady)return state;}
+    control.observer=new MutationObserver(()=>void attempt());control.observer.observe(document.documentElement,{childList:true,subtree:true});
+    addEventListener("loadedmetadata",()=>void attempt(),{once:true,capture:true});addEventListener("playing",()=>void attempt(),{once:true,capture:true});addEventListener("canplay",()=>void attempt(),{once:true,capture:true});
+    for(const delay of [0,250,250,500,1000,2000]){if(delay)await new Promise((resolve)=>setTimeout(resolve,delay));const state=await attempt();if(state?.playbackReady)return state;}
     control.cancelled=true;control.observer?.disconnect();return control.last??{playerFound:false,playerMutedBefore:null,playerMutedAfter:null,playerVolumeBefore:null,playerVolumeAfter:null,muteButtonFound:false,muteButtonClicked:false,playbackReady:false,attempts:control.attempts};
   })()`;
 }
@@ -235,11 +289,24 @@ export class InternalBrowserManager {
     this.kickVolumes.set(id, safeVolume);
     const playback = await configureManagedKickPlayback(
       "webContents",
-      () =>
-        tab.view.webContents.executeJavaScript(
+      async () => {
+        const domResult = await tab.view.webContents.executeJavaScript(
           kickAudioScript(safeVolume),
           true,
-        ),
+        );
+        if (domResult?.playbackReady) return domResult;
+        const windowActive = Boolean(
+          this.internalBrowserWindow?.isFocused() &&
+          this.activeInternalTabId === id,
+        );
+        const shortcut = await toggleKickMuteWithShortcut(
+          tab.view.webContents,
+          windowActive,
+        );
+        return shortcut.shortcutAttempted
+          ? { ...domResult, ...shortcut }
+          : domResult;
+      },
       () => tab.view.webContents.setAudioMuted(true),
       () => tab.view.webContents.isAudioMuted(),
     );

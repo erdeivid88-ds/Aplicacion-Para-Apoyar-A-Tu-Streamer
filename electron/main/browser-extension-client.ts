@@ -1,21 +1,188 @@
 import net from "node:net";
 import { randomUUID } from "node:crypto";
-import { NativeMessageDecoder, encodeNativeMessage } from "../../native-host/src/framing";
-import { PROTOCOL_VERSION, type BrowserAction } from "../../src/domain/browser-protocol";
+import {
+  NativeMessageDecoder,
+  encodeNativeMessage,
+} from "../../native-host/src/framing";
+import {
+  PROTOCOL_VERSION,
+  type BrowserAction,
+} from "../../src/domain/browser-protocol";
 
 const PIPE = "\\\\.\\pipe\\apoya-a-tu-streamer-native-v1";
 export class BrowserExtensionClient {
   readonly appSessionId = randomUUID();
   private managedRegistryVersion = 0;
-  private server?: net.Server; private socket?: net.Socket; private heartbeat?: NodeJS.Timeout;
-  private pending = new Map<string,{resolve:(v:any)=>void,reject:(e:Error)=>void,timer:NodeJS.Timeout;action:BrowserAction;traceId?:unknown}>();
-  constructor(private appVersion:string, private monitorStatus:()=>string, private changed:(status:Record<string,unknown>)=>void) {}
-  start(){this.server=net.createServer(socket=>this.attach(socket));this.server.on("error",error=>this.changed({connected:false,nativeHostConnected:false,lastError:error.message}));this.server.listen(PIPE);}
-  private attach(socket:net.Socket){this.socket?.destroy();this.socket=socket;const decoder=new NativeMessageDecoder();this.changed({nativeHostConnected:true,lastCommunication:new Date().toISOString()});socket.on("data",chunk=>{try{for(const message of decoder.push(Buffer.from(chunk)))this.receive(message as any)}catch{socket.destroy();}});socket.on("close",()=>this.disconnect("Native Messaging desconectado."));void this.request("handshake",{appVersion:this.appVersion,monitorStatus:this.monitorStatus()}).then(payload=>{this.managedRegistryVersion=Number(payload.managedRegistryVersion??0);this.changed({connected:true,sessionActive:true,...payload,lastError:undefined});this.heartbeat=setInterval(()=>void this.request("heartbeat",{timestamp:Date.now(),monitorStatus:this.monitorStatus()}).then(()=>this.changed({lastHeartbeat:new Date().toISOString()})).catch(()=>undefined),10000);}).catch(error=>this.disconnect(error.message));}
-  private receive(message:any){this.changed({lastCommunication:new Date().toISOString()});if(message?.event==="stream_closed"||message?.event==="managed_tab_closed"){this.changed({lastClosedStream:message.payload});return;}const item=this.pending.get(message?.requestId);if(!item)return;clearTimeout(item.timer);this.pending.delete(message.requestId);if(item.action==="open_stream"||item.action==="configure_audio")console.info("[managed-tab-trace]",{stage:item.action==="open_stream"?"F_MAIN_OPENED":"I_MAIN_AUDIO_RESULT",traceId:item.traceId,appSessionId:this.appSessionId,tabId:message.payload?.tabId,success:message.success,errorCode:message.error});if(message.success)item.resolve(message.payload);else item.reject(new Error(message.error??"Extensión rechazada."));}
-  request(action:BrowserAction,payload:Record<string,unknown>={}){return new Promise<any>((resolve,reject)=>{if(!this.socket||this.socket.destroyed){reject(new Error("Extensión no disponible."));return;}const requestId=randomUUID();if(action==="open_stream"||action==="configure_audio")console.info("[managed-tab-trace]",{stage:action==="open_stream"?"A_MAIN_OPEN":"G_MAIN_ENSURE_AUDIO",traceId:payload.traceId,appSessionId:this.appSessionId,tabId:payload.tabId,streamerId:payload.streamerId,streamSessionId:payload.streamSessionId,monitorSessionId:payload.monitorSessionId});const timer=setTimeout(()=>{this.pending.delete(requestId);reject(new Error("Tiempo de espera de la extensión agotado."));},5000);this.pending.set(requestId,{resolve,reject,timer,action,traceId:payload.traceId});this.socket.write(encodeNativeMessage({protocolVersion:PROTOCOL_VERSION,requestId,appSessionId:this.appSessionId,action,payload}));});}
-  isConnected(){return Boolean(this.socket&&!this.socket.destroyed);}
-  supportsManagedRegistry(){return this.managedRegistryVersion>=2;}
-  private disconnect(reason:string){clearInterval(this.heartbeat);this.heartbeat=undefined;this.socket=undefined;for(const item of this.pending.values()){clearTimeout(item.timer);item.reject(new Error(reason));}this.pending.clear();this.changed({connected:false,nativeHostConnected:false,sessionActive:false,lastError:reason});}
-  stop(){clearInterval(this.heartbeat);this.socket?.destroy();this.server?.close();this.disconnect("Aplicación cerrada.");}
+  private server?: net.Server;
+  private socket?: net.Socket;
+  private heartbeat?: NodeJS.Timeout;
+  private pending = new Map<
+    string,
+    {
+      resolve: (v: any) => void;
+      reject: (e: Error) => void;
+      timer: NodeJS.Timeout;
+      action: BrowserAction;
+      traceId?: unknown;
+    }
+  >();
+  constructor(
+    private appVersion: string,
+    private monitorStatus: () => string,
+    private changed: (status: Record<string, unknown>) => void,
+  ) {}
+  start() {
+    this.server = net.createServer((socket) => this.attach(socket));
+    this.server.on("error", (error) =>
+      this.changed({
+        connected: false,
+        nativeHostConnected: false,
+        lastError: error.message,
+      }),
+    );
+    this.server.listen(PIPE);
+  }
+  private attach(socket: net.Socket) {
+    this.socket?.destroy();
+    this.socket = socket;
+    const decoder = new NativeMessageDecoder();
+    this.changed({
+      nativeHostConnected: true,
+      lastCommunication: new Date().toISOString(),
+    });
+    socket.on("data", (chunk) => {
+      try {
+        for (const message of decoder.push(Buffer.from(chunk)))
+          this.receive(message as any);
+      } catch {
+        socket.destroy();
+      }
+    });
+    socket.on("close", () => this.disconnect("Native Messaging desconectado."));
+    void this.request("handshake", {
+      appVersion: this.appVersion,
+      monitorStatus: this.monitorStatus(),
+    })
+      .then((payload) => {
+        this.managedRegistryVersion = Number(
+          payload.managedRegistryVersion ?? 0,
+        );
+        this.changed({
+          connected: true,
+          sessionActive: true,
+          ...payload,
+          lastError: undefined,
+        });
+        this.heartbeat = setInterval(
+          () =>
+            void this.request("heartbeat", {
+              timestamp: Date.now(),
+              monitorStatus: this.monitorStatus(),
+            })
+              .then(() =>
+                this.changed({ lastHeartbeat: new Date().toISOString() }),
+              )
+              .catch(() => undefined),
+          10000,
+        );
+      })
+      .catch((error) => this.disconnect(error.message));
+  }
+  private receive(message: any) {
+    this.changed({ lastCommunication: new Date().toISOString() });
+    if (
+      message?.event === "stream_closed" ||
+      message?.event === "managed_tab_closed"
+    ) {
+      this.changed({ lastClosedStream: message.payload });
+      return;
+    }
+    const item = this.pending.get(message?.requestId);
+    if (!item) return;
+    clearTimeout(item.timer);
+    this.pending.delete(message.requestId);
+    if (item.action === "open_stream" || item.action === "configure_audio")
+      console.info("[managed-tab-trace]", {
+        stage:
+          item.action === "open_stream"
+            ? "F_MAIN_OPENED"
+            : "I_MAIN_AUDIO_RESULT",
+        traceId: item.traceId,
+        appSessionId: this.appSessionId,
+        tabId: message.payload?.tabId,
+        success: message.success,
+        errorCode: message.error,
+      });
+    if (message.success) item.resolve(message.payload);
+    else item.reject(new Error(message.error ?? "Extensión rechazada."));
+  }
+  request(action: BrowserAction, payload: Record<string, unknown> = {}) {
+    return new Promise<any>((resolve, reject) => {
+      if (!this.socket || this.socket.destroyed) {
+        reject(new Error("Extensión no disponible."));
+        return;
+      }
+      const requestId = randomUUID();
+      if (action === "open_stream" || action === "configure_audio")
+        console.info("[managed-tab-trace]", {
+          stage:
+            action === "open_stream" ? "A_MAIN_OPEN" : "G_MAIN_ENSURE_AUDIO",
+          traceId: payload.traceId,
+          appSessionId: this.appSessionId,
+          tabId: payload.tabId,
+          streamerId: payload.streamerId,
+          streamSessionId: payload.streamSessionId,
+          monitorSessionId: payload.monitorSessionId,
+        });
+      const timeoutMs = action === "configure_audio" ? 20_000 : 5_000;
+      const timer = setTimeout(() => {
+        this.pending.delete(requestId);
+        reject(new Error("Tiempo de espera de la extensión agotado."));
+      }, timeoutMs);
+      this.pending.set(requestId, {
+        resolve,
+        reject,
+        timer,
+        action,
+        traceId: payload.traceId,
+      });
+      this.socket.write(
+        encodeNativeMessage({
+          protocolVersion: PROTOCOL_VERSION,
+          requestId,
+          appSessionId: this.appSessionId,
+          action,
+          payload,
+        }),
+      );
+    });
+  }
+  isConnected() {
+    return Boolean(this.socket && !this.socket.destroyed);
+  }
+  supportsManagedRegistry() {
+    return this.managedRegistryVersion >= 2;
+  }
+  private disconnect(reason: string) {
+    clearInterval(this.heartbeat);
+    this.heartbeat = undefined;
+    this.socket = undefined;
+    for (const item of this.pending.values()) {
+      clearTimeout(item.timer);
+      item.reject(new Error(reason));
+    }
+    this.pending.clear();
+    this.changed({
+      connected: false,
+      nativeHostConnected: false,
+      sessionActive: false,
+      lastError: reason,
+    });
+  }
+  stop() {
+    clearInterval(this.heartbeat);
+    this.socket?.destroy();
+    this.server?.close();
+    this.disconnect("Aplicación cerrada.");
+  }
 }

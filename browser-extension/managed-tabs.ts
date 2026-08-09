@@ -70,7 +70,11 @@ export function createManagedTabRegistry(dependencies: ManagedTabDependencies) {
     return register({ ...item, ...patch });
   }
 
-  async function getManagedTab(tabId: number, appSessionId: string) {
+  async function getManagedTab(
+    tabId: number,
+    appSessionId: string,
+    requireReadyUrl = true,
+  ) {
     if (!Number.isInteger(tabId) || tabId <= 0)
       throw new Error("TAB_NOT_REGISTERED");
     const item = await get(tabId);
@@ -78,6 +82,14 @@ export function createManagedTabRegistry(dependencies: ManagedTabDependencies) {
     if (item.appSessionId !== appSessionId)
       throw new Error("APP_SESSION_MISMATCH");
     let tab: TabSnapshot | undefined;
+    if (!requireReadyUrl) {
+      try {
+        tab = await dependencies.getTab(tabId);
+      } catch {
+        throw new Error("TAB_NOT_FOUND");
+      }
+      return { item, tab };
+    }
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         tab = await dependencies.getTab(tabId);

@@ -386,6 +386,8 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
       audioConfigured: s.platform !== "kick",
     };
     try {
+      if (s.platform === "kick")
+        log("Esperando al reproductor de Kick…", "info", s);
       audio = await internalBrowser.configureAudio(
         s.id,
         store.get("settings.kickAudioEnabled"),
@@ -399,7 +401,7 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
         );
       else if (s.platform === "kick")
         log(
-          "Kick reproduciendo correctamente con la pestaña silenciada.",
+          "Kick reproduciendo correctamente con la salida silenciada.",
           "info",
           s,
         );
@@ -476,18 +478,22 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
               s,
             );
           } else {
+            log("Esperando al reproductor de Kick…", "info", s);
             audio = await extensionClient.request("configure_audio", {
               traceId: managedTraceId,
               tabId: opened.tabId,
               enabled: store.get("settings.kickAudioEnabled"),
               targetVolume: store.get("settings.kickInitialVolume"),
             });
-            if (audio.audioConfigured)
+            if (audio.audioConfigured) {
+              log("Pestaña de Kick lista.", "info", s);
+              log("Reproductor de Kick activado.", "info", s);
               log(
                 "Kick reproduciendo correctamente con la pestaña silenciada.",
                 "info",
                 s,
               );
+            }
           }
         } catch (error) {
           const errorCode = error instanceof Error ? error.message : "rejected";
@@ -501,7 +507,7 @@ async function openStream(s: Streamer): Promise<OpenStreamResult> {
           log(
             managedTabFailure
               ? "No se pudo preparar la pestaña de Kick."
-              : `La pestaña está abierta, pero no se pudo configurar el reproductor de Kick: ${errorCode}.`,
+              : "La pestaña está abierta, pero no se pudo activar el audio de Kick. Consulta los detalles de diagnóstico.",
             "warning",
             s,
           );

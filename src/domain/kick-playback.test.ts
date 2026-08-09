@@ -54,7 +54,22 @@ describe("salida administrada de Kick", () => {
     expect(mute).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       success: false,
-      errorCode: "PLAYER_UNMUTE_FAILED",
+      errorCode: "PLAYER_NOT_FOUND",
+    });
+  });
+
+  it("comprueba el mute de salida y devuelve TAB_MUTE_FAILED", async () => {
+    const result = await configureManagedKickPlayback(
+      "browserTab",
+      async () => player(),
+      vi.fn(),
+      () => false,
+    );
+    expect(result).toMatchObject({
+      playerMutedAfter: false,
+      browserTabMutedAfter: false,
+      success: false,
+      errorCode: "TAB_MUTE_FAILED",
     });
   });
 });
