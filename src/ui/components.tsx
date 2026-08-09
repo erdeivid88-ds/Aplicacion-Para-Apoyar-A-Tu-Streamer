@@ -1,4 +1,9 @@
-import type { PropsWithChildren, ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  type PropsWithChildren,
+  type ReactNode,
+} from "react";
 export function PageHeader({
   title,
   description,
@@ -164,5 +169,66 @@ export function PlatformMark({ platform }: { platform: "twitch" | "kick" }) {
     >
       {platform === "twitch" ? "T" : "K"}
     </span>
+  );
+}
+
+export function Modal({
+  title,
+  children,
+  actions,
+  close,
+  className = "",
+}: PropsWithChildren<{
+  title: string;
+  actions?: ReactNode;
+  close?: () => void;
+  className?: string;
+}>) {
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const node = panel.current;
+    node
+      ?.querySelector<HTMLElement>("button, input, select, [tabindex]")
+      ?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && close) close();
+      if (event.key !== "Tab" || !node) return;
+      const focusable = [
+        ...node.querySelectorAll<HTMLElement>(
+          "button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex='0']",
+        ),
+      ];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => {
+      document.removeEventListener("keydown", keydown);
+      previous?.focus();
+    };
+  }, [close]);
+  return (
+    <div className="backdrop" role="presentation">
+      <div
+        ref={panel}
+        className={`modal accessible-modal ${className}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="app-modal-title"
+      >
+        <h2 id="app-modal-title">{title}</h2>
+        <div className="modal-content">{children}</div>
+        {actions && <div className="modal-actions">{actions}</div>}
+      </div>
+    </div>
   );
 }

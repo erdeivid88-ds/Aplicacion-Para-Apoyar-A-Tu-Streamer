@@ -113,6 +113,7 @@ export interface Settings {
   theme: "light" | "dark" | "system";
   showStartNotice: boolean;
   onboardingCompleted: boolean;
+  lastSeenVersion: string;
   platforms: Record<Platform, { enabled: boolean; clientId?: string }>;
 }
 export interface DeviceAuthPublic {
@@ -202,7 +203,14 @@ export type UpdateState = {
   version: string;
   packaged: boolean;
   installable: boolean;
-  status: "idle" | "checking" | "current" | "available" | "downloading" | "ready" | "error";
+  status:
+    | "idle"
+    | "checking"
+    | "current"
+    | "available"
+    | "downloading"
+    | "ready"
+    | "error";
   availableVersion?: string;
   progress?: number;
   error?: string;
@@ -219,7 +227,9 @@ export interface ExtensionStatus {
   managedTabs: number;
   lastError?: string;
 }
-export const defaultAutomation = (platform: Platform = "twitch"): AutomationConfig => ({
+export const defaultAutomation = (
+  platform: Platform = "twitch",
+): AutomationConfig => ({
   enabled: false,
   authorized: false,
   message:
@@ -274,6 +284,7 @@ export const defaults: AppState = {
     theme: "system",
     showStartNotice: true,
     onboardingCompleted: false,
+    lastSeenVersion: "",
     platforms: { twitch: { enabled: false }, kick: { enabled: false } },
   },
   streamers: [],

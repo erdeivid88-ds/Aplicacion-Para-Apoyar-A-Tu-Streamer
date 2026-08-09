@@ -18,9 +18,14 @@ import {
   TWITCH_DEVELOPER_URL,
 } from "../domain/support";
 import {
+  resolveStartupSurface,
+  shouldShowUpdateModal,
+} from "../domain/visual-experience";
+import {
   Alert,
   Card,
   EmptyState,
+  Modal,
   PageHeader,
   PlatformMark,
   SaveStatus,
@@ -47,18 +52,19 @@ function updateStatusText(update: UpdateState) {
 const navigation = [
   ["Inicio", "⌂"],
   ["Streamers", "♡"],
-  ["Plataformas", "◉"],
-  ["Automatizaciones", "✦"],
+  ["Cuentas", "◉"],
   ["Navegador", "▣"],
   ["Actividad", "◷"],
+  ["Guía rápida", "?"],
   ["Ajustes", "⚙"],
-  ["Ayuda", "?"],
 ] as const;
 type Page = (typeof navigation)[number][0];
 
 export default function App() {
   const [state, setState] = useState<AppState>();
   const [page, setPage] = useState<Page>("Inicio");
+  const [manualOnboarding, setManualOnboarding] = useState(false);
+  const [updateDismissed, setUpdateDismissed] = useState<string>();
   useEffect(() => {
     void window.api.state().then(setState);
     return window.api.onState(setState);
@@ -73,6 +79,12 @@ export default function App() {
         Preparando tu espacio…
       </div>
     );
+  const startupSurface = resolveStartupSurface({
+    onboardingCompleted: state.settings.onboardingCompleted,
+    lastSeenVersion: state.settings.lastSeenVersion,
+    currentVersion: state.updater.version,
+    manualReplay: manualOnboarding,
+  });
   return (
     <div className="app-shell">
       <Sidebar page={page} setPage={setPage} state={state} />
@@ -96,19 +108,40 @@ export default function App() {
         </div>
         {page === "Inicio" && <Home state={state} go={setPage} />}{" "}
         {page === "Streamers" && <Streamers state={state} />}{" "}
-        {page === "Plataformas" && <Platforms state={state} />}{" "}
-        {page === "Automatizaciones" && <Automations state={state} />}{" "}
+        {page === "Cuentas" && <Platforms state={state} />}{" "}
         {page === "Navegador" && <Browser state={state} />}{" "}
         {page === "Actividad" && <Activity state={state} />}{" "}
         {page === "Ajustes" && <SettingsPage state={state} />}
-        {page === "Ayuda" && <HelpSupport state={state} go={setPage} />}
+        {page === "Guía rápida" && (
+          <QuickGuide
+            state={state}
+            go={setPage}
+            replay={() => setManualOnboarding(true)}
+          />
+        )}
         {state.monitor.toast && (
           <div className="toast" role="status">
             {state.monitor.toast}
           </div>
         )}
-        {!state.settings.onboardingCompleted && (
-          <Onboarding state={state} go={setPage} />
+        {startupSurface === "onboarding" && (
+          <Onboarding
+            state={state}
+            go={setPage}
+            manual={manualOnboarding}
+            close={() => setManualOnboarding(false)}
+          />
+        )}
+        {startupSurface === "whats-new" && <WhatsNewModal state={state} />}
+        {shouldShowUpdateModal(
+          startupSurface,
+          state.updater,
+          updateDismissed,
+        ) && (
+          <UpdateModal
+            update={state.updater}
+            later={() => setUpdateDismissed(state.updater.availableVersion)}
+          />
         )}
       </main>
     </div>
@@ -145,7 +178,7 @@ function Sidebar({
           >
             <span aria-hidden="true">{icon}</span>
             <span>{name}</span>
-            {name === "Plataformas" && state.bot.status === "connected" && (
+            {name === "Cuentas" && state.bot.status === "connected" && (
               <i className="nav-dot success" />
             )}
             {name === "Navegador" && state.extension.connected && (
@@ -159,12 +192,16 @@ function Sidebar({
         ))}
       </nav>
       <div className="sidebar-footer">
-        <span
-          className={`pulse ${state.monitor.status !== "off" ? "on" : ""}`}
-        />
-        {state.monitor.status === "off"
-          ? "Monitor apagado"
-          : "Monitor en marcha"}
+        <div>
+          <span
+            className={`pulse ${state.monitor.status !== "off" ? "on" : ""}`}
+          />
+          {state.monitor.status === "off"
+            ? "Monitor apagado"
+            : "Monitor en marcha"}
+        </div>
+        <small>Versión {state.updater.version}</small>
+        <button onClick={() => setPage("Guía rápida")}>Ayuda y soporte</button>
       </div>
     </aside>
   );
@@ -172,21 +209,18 @@ function Sidebar({
 
 function Home({ state, go }: { state: AppState; go: (p: Page) => void }) {
   const live = state.streamers.filter((x) => x.live);
-  const enabled = Object.values(state.settings.platforms).filter(
-    (x) => x.enabled,
-  ).length;
   return (
     <section>
       <PageHeader
-        title="Apoya a tus streamers"
-        description="Nos encargamos de comprobar tus canales y abrir cada directo como tú prefieras."
+        title="Apoya a tu Streamer"
+        description="Mantén tus streamers favoritos abiertos automáticamente mientras están en directo."
         action={
           state.monitor.status === "off" ? (
             <button
               className="button primary large"
               onClick={() => void window.api.start()}
             >
-              ▶ Encender monitor
+              Activar monitor
             </button>
           ) : (
             <button
@@ -197,7 +231,7 @@ function Home({ state, go }: { state: AppState; go: (p: Page) => void }) {
               ■{" "}
               {state.monitor.status === "stopping"
                 ? "Deteniendo…"
-                : "Apagar monitor"}
+                : "Desactivar monitor"}
             </button>
           )
         }
@@ -235,19 +269,20 @@ function Home({ state, go }: { state: AppState; go: (p: Page) => void }) {
           value={state.streamers.length}
           label="Streamers añadidos"
         />
-        <Summary icon="●" value={live.length} label="En directo ahora" />
-        <Summary icon="◉" value={enabled} label="Plataformas activas" />
+        <Summary
+          icon="K"
+          value={state.kick.status === "connected" ? "Conectada" : "Pendiente"}
+          label="Cuenta de Kick"
+        />
+        <Summary
+          icon="T"
+          value={state.bot.status === "connected" ? "Conectada" : "Pendiente"}
+          label="Cuenta de Twitch"
+        />
         <Summary
           icon="◷"
-          value={
-            state.monitor.nextScan
-              ? new Date(state.monitor.nextScan).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : "—"
-          }
-          label="Próxima comprobación"
+          value={browserModeLabel(state.settings.browserMode)}
+          label="Modo de navegador"
         />
       </div>
       <div className="section-heading">
@@ -271,6 +306,43 @@ function Home({ state, go }: { state: AppState; go: (p: Page) => void }) {
         <div className="stream-grid">
           {live.map((s) => (
             <StreamerCard key={s.id} item={s} compact />
+          ))}
+        </div>
+      )}
+      <div className="section-heading recent-heading">
+        <div>
+          <h3>Actividad reciente</h3>
+          <p>Las últimas acciones importantes de la aplicación.</p>
+        </div>
+        <button onClick={() => go("Actividad")}>Ver toda la actividad</button>
+      </div>
+      {!state.activity.length ? (
+        <EmptyState
+          icon="▷"
+          title="Todavía no hay actividad"
+          description="Aquí aparecerán las comprobaciones, aperturas y mensajes."
+        />
+      ) : (
+        <div className="recent-activity">
+          {state.activity.slice(0, 5).map((item) => (
+            <div key={item.id} className={`recent-event ${item.level}`}>
+              <span aria-hidden="true">
+                {item.level === "error" ? "!" : "✓"}
+              </span>
+              <div>
+                <b>{friendlyActivity(item.description)}</b>
+                <small>
+                  {item.channel ?? "Aplicación"}
+                  {item.platform ? ` · ${item.platform}` : ""}
+                </small>
+              </div>
+              <time>
+                {new Date(item.at).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </time>
+            </div>
           ))}
         </div>
       )}
@@ -311,7 +383,7 @@ function QuickAlerts({
           tone="warning"
           title="Twitch no está conectado"
           action={
-            <button onClick={() => go("Plataformas")}>Conectar Twitch</button>
+            <button onClick={() => go("Cuentas")}>Conectar Twitch</button>
           }
         >
           Conecta una cuenta para comprobar canales de Twitch.
@@ -560,7 +632,7 @@ function StreamerWizard({ close }: { close: () => void }) {
       live: false,
       automation: defaultAutomation(platform),
     });
-    close();
+    setStep(4);
   };
   return (
     <div className="backdrop" role="presentation">
@@ -572,13 +644,15 @@ function StreamerWizard({ close }: { close: () => void }) {
       >
         <div className="modal-head">
           <div>
-            <small>Paso {step} de 3</small>
+            <small>{step === 4 ? "Completado" : `Paso ${step} de 4`}</small>
             <h2 id="wizard-title">
               {step === 1
                 ? "¿En qué plataforma está?"
                 : step === 2
                   ? "Busca el canal"
-                  : "Confirma el streamer"}
+                  : step === 3
+                    ? "Revisa los datos"
+                    : "Streamer añadido"}
             </h2>
           </div>
           <button className="icon-button" aria-label="Cerrar" onClick={close}>
@@ -586,7 +660,7 @@ function StreamerWizard({ close }: { close: () => void }) {
           </button>
         </div>
         <div className="progress">
-          <i style={{ width: `${(step / 3) * 100}%` }} />
+          <i style={{ width: `${(Math.min(step, 4) / 4) * 100}%` }} />
         </div>
         {step === 1 && (
           <div className="choice-grid">
@@ -611,7 +685,7 @@ function StreamerWizard({ close }: { close: () => void }) {
         {step === 2 && (
           <>
             <label className="field">
-              Nombre, URL o ID del canal
+              Nombre del canal o URL
               <input
                 autoFocus
                 value={input}
@@ -622,9 +696,7 @@ function StreamerWizard({ close }: { close: () => void }) {
                     : "por ejemplo: xqc"
                 }
               />
-              <small>
-                Intentaremos encontrar el canal y completar sus datos.
-              </small>
+              <small>Puedes pegar directamente el enlace del canal.</small>
             </label>
             {error && (
               <>
@@ -669,6 +741,13 @@ function StreamerWizard({ close }: { close: () => void }) {
             </div>
           </Card>
         )}
+        {step === 4 && (
+          <div className="wizard-success">
+            <span aria-hidden="true">✓</span>
+            <h3>Streamer añadido</h3>
+            <p>El canal ya forma parte de tu lista.</p>
+          </div>
+        )}
         <div className="modal-actions">
           {step > 1 && <button onClick={() => setStep(step - 1)}>Atrás</button>}
           {step === 1 && (
@@ -689,6 +768,23 @@ function StreamerWizard({ close }: { close: () => void }) {
             <button className="primary" onClick={() => void finish()}>
               Añadir streamer
             </button>
+          )}
+          {step === 4 && (
+            <>
+              <button
+                onClick={() => {
+                  setStep(1);
+                  setInput("");
+                  setPreview(undefined);
+                  setError("");
+                }}
+              >
+                Añadir otro
+              </button>
+              <button className="primary" onClick={close}>
+                Terminar
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -806,7 +902,7 @@ function Platforms({ state }: { state: AppState }) {
   return (
     <section>
       <PageHeader
-        title="Plataformas"
+        title="Tus cuentas"
         description="Conecta tus cuentas y elige qué servicios quieres comprobar."
       />
       <div className="platform-grid">
@@ -1850,6 +1946,10 @@ function Activity({ state }: { state: AppState }) {
                     {item.channel} · {item.platform}
                   </p>
                 )}
+                <details className="activity-details">
+                  <summary>Ver detalles</summary>
+                  <code>{item.description}</code>
+                </details>
               </div>
             </div>
           ))}
@@ -1865,6 +1965,7 @@ function SettingsPage({ state }: { state: AppState }) {
     "Apariencia",
     "Inicio y bandeja",
     "Monitor",
+    "Automatización",
     "Apertura de directos",
     "Pestañas y sonido",
     "Notificaciones",
@@ -2022,6 +2123,11 @@ function SettingsPage({ state }: { state: AppState }) {
               )}
             </>
           )}
+          {category === "Automatización" && (
+            <div className="embedded-settings-page">
+              <Automations state={state} />
+            </div>
+          )}
           {category === "Apertura de directos" && (
             <>
               <SettingRow
@@ -2153,11 +2259,6 @@ function SettingsPage({ state }: { state: AppState }) {
                 "Avisar de errores de la extensión",
                 "Muestra problemas de conexión que requieren tu atención.",
               )}
-              <button
-                onClick={() => update("onboardingCompleted", false, true)}
-              >
-                Volver a ver la guía inicial
-              </button>
             </>
           )}
           {category === "Diagnóstico" && (
@@ -2363,66 +2464,188 @@ function HelpContent({ state }: { state: AppState }) {
   );
 }
 
-function HelpSupport({
+function WhatsNewModal({ state }: { state: AppState }) {
+  const continueToApp = () =>
+    window.api.saveSettings({ lastSeenVersion: state.updater.version });
+  return (
+    <Modal
+      title={`Novedades de la versión ${state.updater.version}`}
+      className="update-modal"
+      actions={
+        <>
+          <button onClick={() => void continueToApp()}>Continuar</button>
+          <button className="primary" onClick={() => void continueToApp()}>
+            Ver novedades
+          </button>
+        </>
+      }
+    >
+      <div className="update-symbol" aria-hidden="true">
+        ✦
+      </div>
+      <p>Hemos mejorado la experiencia manteniendo tu configuración intacta.</p>
+      <ul className="release-highlights">
+        <li>Una navegación más clara y accesible.</li>
+        <li>Guías paso a paso para Twitch, Kick y el navegador.</li>
+        <li>Actualizaciones visibles y fáciles de instalar.</li>
+      </ul>
+    </Modal>
+  );
+}
+
+function UpdateModal({
+  update,
+  later,
+}: {
+  update: UpdateState;
+  later: () => void;
+}) {
+  const downloading = update.status === "downloading";
+  const ready = update.status === "ready";
+  return (
+    <Modal
+      title={ready ? "Actualización lista" : "Nueva actualización disponible"}
+      className="update-modal"
+      close={later}
+      actions={
+        <>
+          <button onClick={later}>Más tarde</button>
+          {!downloading && (
+            <button
+              className="primary"
+              onClick={() =>
+                ready
+                  ? void window.api.installUpdate()
+                  : void window.api.checkForUpdates()
+              }
+            >
+              {ready ? "Reiniciar e instalar" : "Actualizar ahora"}
+            </button>
+          )}
+        </>
+      }
+    >
+      <div className="update-symbol" aria-hidden="true">
+        ⇧
+      </div>
+      <p>
+        Versión <b>{update.availableVersion}</b>
+      </p>
+      <p>Hay una nueva versión de Apoya a tu Streamer disponible.</p>
+      {downloading && (
+        <div className="download-progress" role="status">
+          <div>
+            <span style={{ width: `${update.progress ?? 0}%` }} />
+          </div>
+          <b>Descargando actualización… {Math.round(update.progress ?? 0)} %</b>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function QuickGuide({
   state,
   go,
+  replay,
 }: {
   state: AppState;
   go: (page: Page) => void;
+  replay: () => void;
 }) {
   return (
     <section>
       <PageHeader
-        title="Ayuda y soporte"
-        description="Guías sencillas, solución de problemas y contacto con Vortex Studio."
+        title="Guía rápida"
+        description="Vuelve a consultar cualquier paso sin borrar ni cambiar tu configuración."
         action={
-          <button onClick={() => go("Navegador")}>Configurar extensión</button>
+          <button className="primary" onClick={replay}>
+            Repetir guía inicial
+          </button>
         }
       />
+      <div className="guide-grid">
+        <GuideCard
+          icon="T"
+          title="Conectar Twitch"
+          text="Crea tu aplicación, copia el Client ID y conecta tu cuenta."
+          action={() => go("Cuentas")}
+        />
+        <GuideCard
+          icon="K"
+          title="Conectar Kick"
+          text="Configura tu aplicación de Kick y autoriza la cuenta."
+          action={() => go("Cuentas")}
+        />
+        <GuideCard
+          icon="▣"
+          title="Elegir navegador"
+          text="Compara el navegador normal, la extensión y el modo integrado."
+          action={() => go("Navegador")}
+        />
+        <GuideCard
+          icon="+"
+          title="Añadir streamer"
+          text="Añade un canal mediante su nombre o URL."
+          action={() => go("Streamers")}
+        />
+        <GuideCard
+          icon="●"
+          title="Activar monitor"
+          text="Enciende el monitor y deja que la aplicación compruebe tus canales."
+          action={() => go("Inicio")}
+        />
+      </div>
       <HelpContent state={state} />
     </section>
   );
 }
 
-function Onboarding({ state, go }: { state: AppState; go: (p: Page) => void }) {
-  const [step, setStep] = useState(0);
-  const steps = [
-    {
-      title: "Bienvenido",
-      text: "Vamos a preparar la aplicación para acompañar a tus streamers.",
-      icon: "♡",
-    },
-    {
-      title: "Elige tus plataformas",
-      text: "Puedes usar Twitch, Kick o ambas.",
-      icon: "◉",
-    },
-    {
-      title: "Conecta Twitch",
-      text: "La autorización se hace mediante el flujo seguro de dispositivo.",
-      icon: "T",
-    },
-    {
-      title: "Elige dónde abrir",
-      text: "Navegador normal, extensión o una ventana interna con pestañas.",
-      icon: "▣",
-    },
-    {
-      title: "Añade tu primer streamer",
-      text: "Solo necesitamos su nombre o URL; intentaremos completar el resto.",
-      icon: "＋",
-    },
-    {
-      title: "Todo preparado",
-      text: "Enciende el monitor y nosotros nos ocupamos de comprobar los directos.",
-      icon: "✓",
-    },
-  ];
+function GuideCard({
+  icon,
+  title,
+  text,
+  action,
+}: {
+  icon: string;
+  title: string;
+  text: string;
+  action: () => void;
+}) {
+  return (
+    <Card className="guide-card">
+      <span aria-hidden="true">{icon}</span>
+      <h3>{title}</h3>
+      <p>{text}</p>
+      <button onClick={action}>Ver guía →</button>
+    </Card>
+  );
+}
+
+function Onboarding({
+  state,
+  go,
+  manual,
+  close,
+}: {
+  state: AppState;
+  go: (p: Page) => void;
+  manual: boolean;
+  close: () => void;
+}) {
+  const [step, setStep] = useState(-1);
+  const [streamerWizard, setStreamerWizard] = useState(false);
   const finish = async () => {
-    await window.api.saveSettings({ onboardingCompleted: true });
-    go(state.streamers.length ? "Inicio" : "Streamers");
+    if (!manual)
+      await window.api.saveSettings({
+        onboardingCompleted: true,
+        lastSeenVersion: state.updater.version,
+      });
+    close();
+    go("Inicio");
   };
-  const current = steps[step];
+  if (streamerWizard)
+    return <StreamerWizard close={() => setStreamerWizard(false)} />;
   return (
     <div className="backdrop onboarding">
       <div
@@ -2431,54 +2654,235 @@ function Onboarding({ state, go }: { state: AppState; go: (p: Page) => void }) {
         aria-modal="true"
         aria-labelledby="onboarding-title"
       >
-        <button className="skip" onClick={() => void finish()}>
-          Omitir guía
-        </button>
+        {step >= 0 && (
+          <button className="skip" onClick={() => void finish()}>
+            Saltar por ahora
+          </button>
+        )}
         <img
           className="onboarding-logo"
           src={logoLurks}
           alt="Logo de Apoya a tu Streamer"
         />
-        <small>
-          Paso {step + 1} de {steps.length}
-        </small>
-        <h2 id="onboarding-title">{current.title}</h2>
-        <p>{current.text}</p>
-        {step === 1 && (
-          <div className="choice-row">
-            <PlatformMark platform="twitch" />
-            <PlatformMark platform="kick" />
+        {step === -1 ? (
+          <div className="onboarding-welcome">
+            <span className="eyebrow">Primeros pasos</span>
+            <h2 id="onboarding-title">Bienvenido a Apoya a tu Streamer</h2>
+            <p>En unos minutos tendrás todo preparado.</p>
           </div>
+        ) : (
+          <>
+            <small>Paso {step + 1} de 5</small>
+            {step === 0 && <OnboardingTwitch />}
+            {step === 1 && <OnboardingKick />}
+            {step === 2 && <OnboardingBrowser state={state} />}
+            {step === 3 && (
+              <div className="onboarding-step">
+                <span className="onboarding-icon">+</span>
+                <h2 id="onboarding-title">Añade tu primer streamer</h2>
+                <p>
+                  Cuando este canal se ponga en directo, Apoya a tu Streamer
+                  podrá abrirlo automáticamente.
+                </p>
+                <button
+                  className="primary"
+                  onClick={() => setStreamerWizard(true)}
+                >
+                  Añadir streamer
+                </button>
+              </div>
+            )}
+            {step === 4 && (
+              <div className="onboarding-step">
+                <span className="onboarding-icon success">✓</span>
+                <h2 id="onboarding-title">¡Todo preparado!</h2>
+                <div className="onboarding-summary">
+                  <span>
+                    Twitch{" "}
+                    <b>
+                      {state.bot.status === "connected"
+                        ? "Conectada"
+                        : "Pendiente"}
+                    </b>
+                  </span>
+                  <span>
+                    Kick{" "}
+                    <b>
+                      {state.kick.status === "connected"
+                        ? "Conectada"
+                        : "Pendiente"}
+                    </b>
+                  </span>
+                  <span>
+                    Navegador{" "}
+                    <b>{browserModeLabel(state.settings.browserMode)}</b>
+                  </span>
+                  <span>
+                    Streamers <b>{state.streamers.length} añadidos</b>
+                  </span>
+                </div>
+                <p>
+                  Puedes volver a consultar esta guía cuando quieras desde “Guía
+                  rápida”.
+                </p>
+              </div>
+            )}
+            <div className="dots" aria-label={`Paso ${step + 1} de 5`}>
+              {[0, 1, 2, 3, 4].map((item) => (
+                <i className={item === step ? "active" : ""} key={item} />
+              ))}
+            </div>
+          </>
         )}
-        {step === 2 && (
-          <TwitchGuideButton label="Ver cómo crear la aplicación de Twitch" />
-        )}
-        {step === 3 && (
-          <div className="mini-modes">
-            <span>↗ Normal</span>
-            <span>◫ Extensión</span>
-            <span>▣ Interno</span>
-          </div>
-        )}
-        <div className="dots">
-          {steps.map((_, i) => (
-            <i className={i === step ? "active" : ""} key={i} />
-          ))}
-        </div>
         <div className="modal-actions">
-          {step > 0 && <button onClick={() => setStep(step - 1)}>Atrás</button>}
+          {step >= 0 && (
+            <button onClick={() => setStep(step - 1)}>Atrás</button>
+          )}
           <button
             className="primary"
-            onClick={() =>
-              step === steps.length - 1 ? void finish() : setStep(step + 1)
-            }
+            onClick={() => (step === 4 ? void finish() : setStep(step + 1))}
           >
-            {step === steps.length - 1 ? "Empezar" : "Continuar"}
+            {step === -1
+              ? "Empezar"
+              : step === 4
+                ? "Ir a la aplicación"
+                : "Continuar"}
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+function OnboardingTwitch() {
+  return (
+    <div className="onboarding-step">
+      <PlatformMark platform="twitch" />
+      <h2 id="onboarding-title">Conecta tu cuenta de Twitch</h2>
+      <p>
+        Twitch se utiliza para comprobar canales y enviar tus mensajes
+        automáticos.
+      </p>
+      <ol className="visual-steps">
+        <li>
+          <b>Abre Twitch Developers</b>
+          <span>Crea una aplicación pública con un nombre reconocible.</span>
+        </li>
+        <li>
+          <b>Copia el Client ID</b>
+          <span>No necesitas pegar ningún Client Secret.</span>
+        </li>
+        <li>
+          <b>Vuelve a la aplicación</b>
+          <span>
+            Pega el Client ID y completa el Device Code Flow de Twitch.
+          </span>
+        </li>
+      </ol>
+      <button onClick={() => void window.api.open(TWITCH_DEVELOPER_URL)}>
+        Abrir Twitch Developers
+      </button>
+    </div>
+  );
+}
+
+function OnboardingKick() {
+  return (
+    <div className="onboarding-step">
+      <PlatformMark platform="kick" />
+      <h2 id="onboarding-title">Conecta tu cuenta de Kick</h2>
+      <ol className="visual-steps">
+        <li>
+          <b>Abre Kick Developer</b>
+          <span>Crea una aplicación para Apoya a tu Streamer.</span>
+        </li>
+        <li>
+          <b>Configura la dirección de retorno</b>
+          <code>http://localhost:17654/oauth/kick/callback</code>
+        </li>
+        <li>
+          <b>Copia Client ID y Client Secret</b>
+          <span>El secreto queda protegido y no volverá a mostrarse.</span>
+        </li>
+        <li>
+          <b>Conecta la cuenta</b>
+          <span>Vuelve a Cuentas e introduce los datos.</span>
+        </li>
+      </ol>
+      <button
+        onClick={() =>
+          void window.api.open("https://kick.com/settings/developer")
+        }
+      >
+        Abrir Kick Developer
+      </button>
+    </div>
+  );
+}
+
+function OnboardingBrowser({ state }: { state: AppState }) {
+  const modes: Array<{
+    id: Settings["browserMode"];
+    title: string;
+    text: string;
+    detail: string;
+    recommended?: boolean;
+  }> = [
+    {
+      id: "system",
+      title: "Navegador normal",
+      text: "Abre el directo en tu navegador habitual.",
+      detail:
+        "Es la opción más sencilla, pero el control de audio y cierre es limitado.",
+    },
+    {
+      id: "extension",
+      title: "Navegador con extensión",
+      text: "Usa Edge o Chrome con la extensión de la aplicación.",
+      detail:
+        "Controla solo las pestañas administradas y ofrece mute, cierre y reapertura.",
+      recommended: true,
+    },
+    {
+      id: "internal",
+      title: "Navegador integrado",
+      text: "Abre los directos dentro de la propia aplicación.",
+      detail:
+        "No necesita extensión y mantiene el control directo desde la app.",
+    },
+  ];
+  return (
+    <div className="onboarding-step wide">
+      <h2 id="onboarding-title">¿Cómo quieres abrir los directos?</h2>
+      <div className="onboarding-modes">
+        {modes.map((mode) => (
+          <button
+            key={mode.id}
+            className={state.settings.browserMode === mode.id ? "selected" : ""}
+            onClick={() =>
+              void window.api.saveSettings({ browserMode: mode.id })
+            }
+          >
+            {mode.recommended && (
+              <StatusBadge tone="success">Recomendado</StatusBadge>
+            )}
+            <b>{mode.title}</b>
+            <span>{mode.text}</span>
+            <small>{mode.detail}</small>
+          </button>
+        ))}
+      </div>
+      <p>Puedes cambiar esta opción más tarde desde Navegador.</p>
+    </div>
+  );
+}
+
+function browserModeLabel(mode: Settings["browserMode"]) {
+  return mode === "extension"
+    ? "Con extensión"
+    : mode === "internal"
+      ? "Integrado"
+      : "Normal";
 }
 
 function relativeTime(value: string) {
@@ -2510,8 +2914,15 @@ function botLabel(status: AppState["bot"]["status"]) {
   )[status];
 }
 function friendlyActivity(text: string) {
+  if (/mensaje automático enviado/i.test(text))
+    return "Mensaje automático enviado";
+  if (/canal abierto/i.test(text)) return "Canal abierto";
+  if (/monitor.*(?:activ|inici)/i.test(text)) return "Monitor activado";
+  if (/monitor.*(?:apag|deten)/i.test(text)) return "Monitor desactivado";
+  if (/no se pudo|error|fall/i.test(text)) return "Algo necesita tu atención";
   return text
     .replace(/scan/gi, "comprobación")
     .replace(/Native Messaging/gi, "conector del navegador")
-    .replace(/managed/gi, "administrada");
+    .replace(/managed/gi, "administrada")
+    .replace(/\b[A-Z][A-Z0-9_]{3,}\b/g, "detalle técnico");
 }

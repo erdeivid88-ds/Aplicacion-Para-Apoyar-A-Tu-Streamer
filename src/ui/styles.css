@@ -894,22 +894,88 @@ main {
   border-radius: var(--radius-sm);
 }
 
-.installer-modal { max-width: 760px; max-height: 90vh; overflow-y: auto; overscroll-behavior: contain; }
-.browser-choice { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 20px 0; }
-.browser-choice button { display: grid; gap: 6px; text-align: left; padding: 18px; }
-.browser-choice button.selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
-.install-progress { display: grid; gap: 7px; padding-left: 24px; }
-.install-progress li.done { color: var(--success); font-weight: 700; }
-.install-instructions { display: grid; gap: 12px; margin: 16px 0; }
-.install-instructions code { overflow-wrap: anywhere; padding: 10px; border-radius: 8px; background: var(--surface-soft); }
-.development-flow > ol { display: grid; gap: 9px; margin: 0; padding-left: 28px; }
-.extension-path { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
-.extension-path code { min-width: 0; white-space: normal; word-break: break-all; }
-.support-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
-.support-actions .alert { flex-basis: 100%; }
-.help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 22px; }
-.email-link { margin-right: 8px; }
-@media (max-width: 650px) { .browser-choice { grid-template-columns: 1fr; } }
+.installer-modal {
+  max-width: 760px;
+  max-height: 90vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.browser-choice {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin: 20px 0;
+}
+.browser-choice button {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  padding: 18px;
+}
+.browser-choice button.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.install-progress {
+  display: grid;
+  gap: 7px;
+  padding-left: 24px;
+}
+.install-progress li.done {
+  color: var(--success);
+  font-weight: 700;
+}
+.install-instructions {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+.install-instructions code {
+  overflow-wrap: anywhere;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+.development-flow > ol {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding-left: 28px;
+}
+.extension-path {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.extension-path code {
+  min-width: 0;
+  white-space: normal;
+  word-break: break-all;
+}
+.support-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+.support-actions .alert {
+  flex-basis: 100%;
+}
+.help-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.email-link {
+  margin-right: 8px;
+}
+@media (max-width: 650px) {
+  .browser-choice {
+    grid-template-columns: 1fr;
+  }
+}
 .backdrop {
   position: fixed;
   inset: 0;
@@ -1209,5 +1275,267 @@ main {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Product shell and guided experience */
+.sidebar-footer {
+  align-items: stretch;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+.sidebar-footer > div {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.sidebar-footer button {
+  min-height: 36px;
+  width: 100%;
+  background: transparent;
+  font-size: 0.82rem;
+}
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+.guide-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+}
+.guide-card > span {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 750;
+}
+.guide-card h3 {
+  margin: var(--space-3) 0 var(--space-1);
+}
+.guide-card button {
+  margin-top: auto;
+  align-self: flex-start;
+}
+.accessible-modal {
+  width: min(92vw, 620px);
+}
+.modal-content {
+  min-width: 0;
+}
+.update-modal {
+  text-align: center;
+}
+.update-symbol {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  margin: 0 auto var(--space-3);
+  border-radius: 20px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 2rem;
+}
+.release-highlights {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+.release-highlights li {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.download-progress {
+  display: grid;
+  gap: var(--space-2);
+}
+.download-progress > div {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.download-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+.onboarding-card {
+  width: min(94vw, 860px);
+  max-height: 92vh;
+  overflow-y: auto;
+}
+.onboarding-welcome {
+  max-width: 560px;
+  margin: auto;
+  text-align: center;
+}
+.eyebrow {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.onboarding-step {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 680px;
+  margin: auto;
+  text-align: center;
+}
+.onboarding-step.wide {
+  max-width: none;
+}
+.onboarding-step > .platform-mark {
+  margin: auto;
+  width: 48px;
+  height: 48px;
+}
+.visual-steps {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  counter-reset: guide;
+  text-align: left;
+  list-style: none;
+}
+.visual-steps li {
+  position: relative;
+  display: grid;
+  gap: 3px;
+  padding: var(--space-3) var(--space-3) var(--space-3) 52px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.visual-steps li::before {
+  counter-increment: guide;
+  content: counter(guide);
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+}
+.visual-steps code {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+}
+.onboarding-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.onboarding-modes button {
+  min-height: 230px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  text-align: left;
+}
+.onboarding-modes button.selected {
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+}
+.onboarding-modes button > span:not(.status),
+.onboarding-modes button > small {
+  line-height: 1.45;
+}
+.onboarding-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  text-align: left;
+}
+.onboarding-summary span {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.embedded-settings-page .page-header {
+  display: none;
+}
+.embedded-settings-page section {
+  padding: 0;
+}
+.recent-heading {
+  margin-top: var(--space-5);
+}
+.recent-activity {
+  display: grid;
+  gap: var(--space-2);
+}
+.recent-event {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.recent-event > span {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--success-soft);
+  color: var(--success);
+  font-weight: 800;
+}
+.recent-event.error > span {
+  background: var(--error-soft);
+  color: var(--error);
+}
+.recent-event > div {
+  display: grid;
+  gap: 3px;
+}
+.recent-event time {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+@media (max-width: 900px) {
+  .onboarding-modes {
+    grid-template-columns: 1fr;
+  }
+  .onboarding-modes button {
+    min-height: auto;
+  }
+}
+@media (max-width: 600px) {
+  .onboarding-summary {
+    grid-template-columns: 1fr;
+  }
+  .guide-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -1360,6 +1360,7 @@ function register() {
       "theme",
       "showStartNotice",
       "onboardingCompleted",
+      "lastSeenVersion",
     ] as const)
       if (patch[key] !== undefined)
         (allowed as Record<string, unknown>)[key] = patch[key];

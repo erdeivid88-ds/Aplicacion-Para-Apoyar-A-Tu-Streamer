@@ -6,13 +6,40 @@ describe("experiencia pública 1.1.0", () => {
     for (const page of [
       "Inicio",
       "Streamers",
-      "Plataformas",
-      "Automatizaciones",
+      "Cuentas",
       "Navegador",
       "Actividad",
+      "Guía rápida",
       "Ajustes",
     ])
       expect(app).toContain(`"${page}"`);
+  });
+  it("incluye onboarding guiado, wizard y explicaciones de navegador", async () => {
+    const app = await readFile("src/ui/App.tsx", "utf8");
+    for (const text of [
+      "Bienvenido a Apoya a tu Streamer",
+      "Paso {step + 1} de 5",
+      "Conecta tu cuenta de Twitch",
+      "Conecta tu cuenta de Kick",
+      "http://localhost:17654/oauth/kick/callback",
+      "Navegador normal",
+      "Navegador con extensión",
+      "Navegador integrado",
+      "Streamer añadido",
+      "Añadir otro",
+    ])
+      expect(app).toContain(text);
+  });
+  it("presenta actualizaciones y novedades en modales centrales", async () => {
+    const app = await readFile("src/ui/App.tsx", "utf8");
+    for (const text of [
+      "Nueva actualización disponible",
+      "Descargando actualización",
+      "Reiniciar e instalar",
+      "Novedades de la versión",
+      "Más tarde",
+    ])
+      expect(app).toContain(text);
   });
   it("ofrece estados vacíos, onboarding y ayuda de IDs", async () => {
     const app = await readFile("src/ui/App.tsx", "utf8");
@@ -24,8 +51,20 @@ describe("experiencia pública 1.1.0", () => {
   });
   it("separa la instalación pública, la de prueba y el soporte", async () => {
     const app = await readFile("src/ui/App.tsx", "utf8");
-    for (const text of ["Configurar extensión", "Google Chrome", "Microsoft Edge", "La extensión ya está incluida", "Registrar conector", "Ya la he cargado", "Informar sobre un error", "Copiar diagnóstico seguro"]) expect(app).toContain(text);
-    expect(app).not.toMatch(/Abrir tienda|Instalar desde la tienda|todavía no está disponible en la tienda/i);
+    for (const text of [
+      "Configurar extensión",
+      "Google Chrome",
+      "Microsoft Edge",
+      "La extensión ya está incluida",
+      "Registrar conector",
+      "Ya la he cargado",
+      "Informar sobre un error",
+      "Copiar diagnóstico seguro",
+    ])
+      expect(app).toContain(text);
+    expect(app).not.toMatch(
+      /Abrir tienda|Instalar desde la tienda|todavía no está disponible en la tienda/i,
+    );
     expect(app.match(/<IdHelp \/>/g)?.length).toBe(1);
   });
   it("guarda automáticamente con debounce y revisiones", async () => {
@@ -39,9 +78,19 @@ describe("experiencia pública 1.1.0", () => {
   });
   it("recupera la guía de Twitch 1.0.7 en las ubicaciones públicas", async () => {
     const app = await readFile("src/ui/App.tsx", "utf8");
-    for (const text of ["Crear una aplicación en Twitch", "Twitch Developer Console", "Público", "Device Code Flow", "No pegues aquí un Client Secret", "¿Cómo consigo mi Client ID?", "Ver cómo crear la aplicación de Twitch"]) expect(app).toContain(text);
+    for (const text of [
+      "Crear una aplicación en Twitch",
+      "Twitch Developer Console",
+      "Público",
+      "Device Code Flow",
+      "No pegues aquí un Client Secret",
+      "¿Cómo consigo mi Client ID?",
+      "Ver cómo crear la aplicación de Twitch",
+    ])
+      expect(app).toContain(text);
     expect(app).not.toContain("https://dev.twitch.tv/console/apps");
-    expect(app.match(/<TwitchGuideButton/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(app.match(/<TwitchGuideButton/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(app).toContain("function OnboardingTwitch");
   });
   it("incluye accesibilidad, temas y responsive sin overflow horizontal", async () => {
     const [app, css] = await Promise.all([
